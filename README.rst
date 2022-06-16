@@ -1,0 +1,40 @@
+The kwimage_ext Module
+==================
+
+|GithubActions| |ReadTheDocs| |Pypi| |Downloads| |Codecov|
+
+
+The ``kwimage_ext`` module. A helper for templating python projects.
+
++------------------+----------------------------------------------+
+| Read the docs    | https://kwimage_ext.readthedocs.io               |
++------------------+----------------------------------------------+
+| Github           | https://github.com/Erotemic/kwimage_ext          |
++------------------+----------------------------------------------+
+| Pypi             | https://pypi.org/project/kwimage_ext             |
++------------------+----------------------------------------------+
+
+
+.. |CircleCI| image:: https://circleci.com/gh/Erotemic/kwimage_ext.svg?style=svg
+    :target: https://circleci.com/gh/Erotemic/kwimage_ext
+
+.. |Appveyor| image:: https://ci.appveyor.com/api/projects/status/github/Erotemic/kwimage_ext?branch=main&svg=True
+   :target: https://ci.appveyor.com/project/Erotemic/kwimage_ext/branch/main
+
+.. |Codecov| image:: https://codecov.io/github/Erotemic/kwimage_ext/badge.svg?branch=main&service=github
+   :target: https://codecov.io/github/Erotemic/kwimage_ext?branch=main
+
+.. |Pypi| image:: https://img.shields.io/pypi/v/kwimage_ext.svg
+   :target: https://pypi.python.org/pypi/kwimage_ext
+
+.. |Downloads| image:: https://img.shields.io/pypi/dm/kwimage_ext.svg
+   :target: https://pypistats.org/packages/kwimage_ext
+
+.. |ReadTheDocs| image:: https://readthedocs.org/projects/kwimage_ext/badge/?version=latest
+    :target: http://kwimage_ext.readthedocs.io/en/latest/
+
+.. |CodeQuality| image:: https://api.codacy.com/project/badge/Grade/4d815305fc014202ba7dea09c4676343   
+    :target: https://www.codacy.com/manual/Erotemic/kwimage_ext?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=Erotemic/kwimage_ext&amp;utm_campaign=Badge_Grade
+
+.. |GithubActions| image:: https://github.com/Erotemic/kwimage_ext/actions/workflows/tests.yml/badge.svg?branch=main
+    :target: https://github.com/Erotemic/kwimage_ext/actions?query=branch%3Amain
