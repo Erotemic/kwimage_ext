@@ -8,8 +8,6 @@ The ``kwimage_ext`` module, which contains C extensions for the ``kwimage`` modu
 +------------------+----------------------------------------------+
 | Read the docs    | https://kwimage_ext.readthedocs.io           |
 +------------------+----------------------------------------------+
-| Github           | https://github.com/Erotemic/kwimage_ext      |
-+------------------+----------------------------------------------+
 | Pypi             | https://pypi.org/project/kwimage_ext         |
 +------------------+----------------------------------------------+
 
