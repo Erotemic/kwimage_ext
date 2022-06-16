@@ -1,7 +1,7 @@
 The kwimage_ext Module
 ======================
 
-|GithubActions| |ReadTheDocs| |Pypi| |Downloads| |Codecov|
+|ReadTheDocs| |Pypi| |Downloads| 
 
 The ``kwimage_ext`` module, which contains C extensions for the ``kwimage`` module.
 
