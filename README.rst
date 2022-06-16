@@ -1,17 +1,16 @@
 The kwimage_ext Module
-==================
+======================
 
 |GithubActions| |ReadTheDocs| |Pypi| |Downloads| |Codecov|
 
+The ``kwimage_ext`` module, which contains C extensions for the ``kwimage`` module.
 
-The ``kwimage_ext`` module. A helper for templating python projects.
-
 +------------------+----------------------------------------------+
-| Read the docs    | https://kwimage_ext.readthedocs.io               |
+| Read the docs    | https://kwimage_ext.readthedocs.io           |
 +------------------+----------------------------------------------+
-| Github           | https://github.com/Erotemic/kwimage_ext          |
+| Github           | https://github.com/Erotemic/kwimage_ext      |
 +------------------+----------------------------------------------+
-| Pypi             | https://pypi.org/project/kwimage_ext             |
+| Pypi             | https://pypi.org/project/kwimage_ext         |
 +------------------+----------------------------------------------+
 
 
