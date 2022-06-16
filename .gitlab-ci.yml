@@ -11,7 +11,7 @@
         Templates used in:
 
         ~/code/kwplot/.gitlab-ci.yml
-        ~/code/kwimage/.gitlab-ci.yml
+        ~/code/kwimage_ext/.gitlab-ci.yml
         ~/code/kwarray/.gitlab-ci.yml
         ~/code/kwcoco/.gitlab-ci.yml
 
