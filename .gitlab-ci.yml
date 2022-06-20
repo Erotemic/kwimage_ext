@@ -10,7 +10,7 @@
         This file should need minimal modification.
 
         Template for this files is (somewhat) from
-        ~/code/xcookie/xcookie/rc/.gitlab-ci.binpy.yml.in
+        ~/code/xcookie/xcookie/rc/gitlab-ci.binpy.yml.in
 
         Similar files are deployed in
         ~/code/kwimage_ext/.gitlab-ci.yml
