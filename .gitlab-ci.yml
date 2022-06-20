@@ -209,9 +209,9 @@ stages:
 
 ._test_minimal_script: &_test_minimal_script
     - ls wheelhouse || echo "wheelhouse does not exist"
-    - MB_PYTHON_TAG=py3-none-any
+    - MB_PYTHON_TAG=$(echo ${CI_JOB_NAME} | sed 's/.*\/\(.*\)-manylinux2010/\1/')
     - VERSION=$(python -c "import setup; print(setup.VERSION)")
-    - BDIST_WHEEL_PATH=wheelhouse/kwimage-${VERSION}-${MB_PYTHON_TAG}.whl
+    - BDIST_WHEEL_PATH=wheelhouse/kwimage-${VERSION}-${MB_PYTHON_TAG}-*manylinux*_x86_64.whl
     - pip install $BDIST_WHEEL_PATH
     #- xdoctest -m kwimage --style=google all
     #- export KWIMAGE_DISABLE_C_EXTENSIONS=1
@@ -398,7 +398,7 @@ test_minimal_loose/cp39-cp39-manylinux2010:
     image:
         *image_python39
     needs: 
-        -  build/py3-none-any
+        -  build/cp39-cp39-manylinux2010
 
 test_minimal_strict/cp39-cp39-manylinux2010:
     <<: 
@@ -406,7 +406,7 @@ test_minimal_strict/cp39-cp39-manylinux2010:
     image:
         *image_python39
     needs: 
-        -  build/py3-none-any
+        -  build/cp39-cp39-manylinux2010
 
 test_full_strict/cp39-cp39-manylinux2010:
     <<: 
@@ -439,7 +439,7 @@ test_minimal_loose/cp38-cp38-manylinux2010:
     image:
         *image_python38
     needs: 
-        -  build/py3-none-any
+        -  build/cp38-cp38-manylinux2010
 
 test_minimal_strict/cp38-cp38-manylinux2010:
     <<: 
@@ -447,7 +447,7 @@ test_minimal_strict/cp38-cp38-manylinux2010:
     image:
         *image_python38
     needs: 
-        -  build/py3-none-any
+        -  build/cp38-cp38-manylinux2010
 
 test_full_strict/cp38-cp38-manylinux2010:
     <<: 
@@ -480,7 +480,7 @@ test_minimal_loose/cp37-cp37m-manylinux2010:
     image:
         *image_python37
     needs: 
-        -  build/py3-none-any
+        -  build/cp37-cp37m-manylinux2010
 
 test_minimal_strict/cp37-cp37m-manylinux2010:
     <<: 
@@ -488,7 +488,7 @@ test_minimal_strict/cp37-cp37m-manylinux2010:
     image:
         *image_python37
     needs: 
-        -  build/py3-none-any
+        -  build/cp37-cp37m-manylinux2010
 
 test_full_strict/cp37-cp37m-manylinux2010:
     <<: 
@@ -522,7 +522,7 @@ test_minimal_loose/cp36-cp36m-manylinux2010:
     image:
         *image_python36
     needs: 
-        -  build/py3-none-any
+        -  build/cp36-cp36m-manylinux2010
 
 test_minimal_strict/cp36-cp36m-manylinux2010:
     <<: 
@@ -530,7 +530,7 @@ test_minimal_strict/cp36-cp36m-manylinux2010:
     image:
         *image_python36
     needs: 
-        -  build/py3-none-any
+        -  build/cp36-cp36m-manylinux2010
 
 test_full_strict/cp36-cp36m-manylinux2010:
     <<: 
