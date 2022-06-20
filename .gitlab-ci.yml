@@ -43,7 +43,7 @@ stages:
         - podman --version
         - podman info --debug
         #- python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@dev/flow
-        - python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support
+        - python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support-backup-2022-06-16
         - pwd
         - ls -al
         # NOTE: this requires that some mechanism exists in cibuildwheel to
