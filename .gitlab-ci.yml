@@ -12,25 +12,14 @@
         Template for this files is (somewhat) from
         ~/code/xcookie/xcookie/rc/.gitlab-ci.binpy.yml.in
 
-
-# This CI file has 4 types of jobs:
-# (1) in the build stage we we build the wheels on a manylinux docker image
-# (2) then in the test stage we install the wheels, run unit tests, and measure coverage
-# (3) after testing we sign the wheels with the CI's GPG key
-# (4) finally if we are on the release branch we will push the signed wheels to pypi
+        Similar files are deployed in
+        ~/code/kwimage_ext/.gitlab-ci.yml
 
 stages:
   - build
   - test
   - gpgsign
   - deploy
-
-
-.__gpg_heredoc__: &__gpg_heredoc__
-        - | 
-            # THIS IS NOT EXECUTE ON THE CI, THIS IS FOR DEVELOPER REFERENCE
-            # ON HOW THE ENCRYPTED GPG KEYS ARE SETUP.
-            # THESE INSTRUCTIONS HAVE MOVED  to dev/setup_secrets.sh
 
 
 ### TEMPLATES ###
@@ -46,7 +35,7 @@ stages:
         - linux
         - docker
         - privileged
-        - smart
+        - small-pypkg-smart
 
     image: gitlab.kitware.com:4567/computer-vision/ci-docker/podman:3.2.1
 
@@ -54,7 +43,7 @@ stages:
         - podman --version
         - podman info --debug
         #- python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@dev/flow
-        - python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support-backup-2022-06-16
+        - python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support
         - pwd
         - ls -al
         # NOTE: this requires that some mechanism exists in cibuildwheel to
@@ -139,6 +128,7 @@ stages:
         - docker
         - linux
         - build
+        - small-pypkg-smart
 
     variables:
         # Change pip's cache directory to be inside the project directory since we can
@@ -553,99 +543,99 @@ test_full_strict/cp36-cp36m-manylinux2010:
 
 # ---------------
 # Universal Python Jobs
-build/py3-none-any:
-    <<: 
-        - *common_template
+#build/py3-none-any:
+#    <<: 
+#        - *common_template
 
-    stage: 
-        build
+#    stage: 
+#        build
 
-    image: gitlab.kitware.com:4567/computer-vision/ci-docker/gl-python:3.7
+#    image: gitlab.kitware.com:4567/computer-vision/ci-docker/gl-python:3.7
 
-    before_script:
-        - python -V  # Print out python version for debugging
-        - pip install virtualenv
-        - virtualenv venv
-        - source venv/bin/activate
-        - pip install pip -U
-        - pip install pip setuptools -U
+#    before_script:
+#        - python -V  # Print out python version for debugging
+#        - pip install virtualenv
+#        - virtualenv venv
+#        - source venv/bin/activate
+#        - pip install pip -U
+#        - pip install pip setuptools -U
 
-    script: 
-        - export KWIMAGE_DISABLE_C_EXTENSIONS=1
-        - KWIMAGE_DISABLE_C_EXTENSIONS=1 python setup.py bdist_wheel --dist-dir wheelhouse
-        - KWIMAGE_DISABLE_C_EXTENSIONS=1 python setup.py sdist --dist-dir wheelhouse
-        - ls wheelhouse
+#    script: 
+#        - export KWIMAGE_DISABLE_C_EXTENSIONS=1
+#        - KWIMAGE_DISABLE_C_EXTENSIONS=1 python setup.py bdist_wheel --dist-dir wheelhouse
+#        - KWIMAGE_DISABLE_C_EXTENSIONS=1 python setup.py sdist --dist-dir wheelhouse
+#        - ls wheelhouse
 
-          # TODO: modernize bdist_wheel: pip wheel . -w wheelhouse --no-deps
-        #- MB_PYTHON_TAG=py3-none-any
-        #- # VERSION=$(python -c "import setup; print(setup.VERSION)")
-        #- # BDIST_WHEEL_PATH=wheelhouse/kwimage-${VERSION}-${MB_PYTHON_TAG}.whl
-        #- # pip install $BDIST_WHEEL_PATH
-        #- # pip install pygments
-        ## Hack to test the installed wheel. TODO: make run_tests work better in this case.
-        #- # pip install -r requirements/tests.txt
-        #- # mkdir -p foo && cd foo && python -m pytest --cov-config ../.coveragerc --cov-report html --cov-report term --cov=kwimage --xdoc $(python -c "import ubelt; print(ubelt.modname_to_modpath('kwimage'))") ../tests
-        #- # xdoctest -m kwimage
+#          # TODO: modernize bdist_wheel: pip wheel . -w wheelhouse --no-deps
+#        #- MB_PYTHON_TAG=py3-none-any
+#        #- # VERSION=$(python -c "import setup; print(setup.VERSION)")
+#        #- # BDIST_WHEEL_PATH=wheelhouse/kwimage-${VERSION}-${MB_PYTHON_TAG}.whl
+#        #- # pip install $BDIST_WHEEL_PATH
+#        #- # pip install pygments
+#        ## Hack to test the installed wheel. TODO: make run_tests work better in this case.
+#        #- # pip install -r requirements/tests.txt
+#        #- # mkdir -p foo && cd foo && python -m pytest --cov-config ../.coveragerc --cov-report html --cov-report term --cov=kwimage --xdoc $(python -c "import ubelt; print(ubelt.modname_to_modpath('kwimage'))") ../tests
+#        #- # xdoctest -m kwimage
           
-    artifacts:
-        paths:
-            - wheelhouse/*.whl
-    cache:
-        paths:
-            - .cache/pip
+#    artifacts:
+#        paths:
+#            - wheelhouse/*.whl
+#    cache:
+#        paths:
+#            - .cache/pip
 
 
-gpgsign/py3-none-any:
-    <<: 
-        - *common_template
+#gpgsign/py3-none-any:
+#    <<: 
+#        - *common_template
 
-    stage: 
-        gpgsign
+#    stage: 
+#        gpgsign
 
-    script: 
-        - ls wheelhouse
-        - MB_PYTHON_TAG=py3-none-any
-        - VERSION=$(python -c "import setup; print(setup.VERSION)")
-        - BDIST_WHEEL_PATH=wheelhouse/kwimage-${VERSION}-${MB_PYTHON_TAG}.whl
-        - export GPG_EXECUTABLE=gpg
-        - export GPG_KEYID=$(cat dev/public_gpg_key)
-        - echo "GPG_KEYID = $GPG_KEYID"
-        # Decrypt and import GPG Keys / trust
-        # note the variable pointed to by VARNAME_CI_SECRET is a protected variables only available on master and release branch
-        - source dev/secrets_configuration.sh
-        - CI_SECRET=${!VARNAME_CI_SECRET}
-        - PUSH_TOKEN=${!VARNAME_PUSH_TOKEN}
-        - $GPG_EXECUTABLE --version
-        - openssl version
-        - $GPG_EXECUTABLE --list-keys
-        # note CI_KITWARE_SECRET is a protected variables only available on master and release branch
-        - GLKWS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:GLKWS -d -a -in dev/ci_public_gpg_key.pgp.enc | $GPG_EXECUTABLE --import 
-        - GLKWS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:GLKWS -d -a -in dev/gpg_owner_trust.enc | $GPG_EXECUTABLE --import-ownertrust
-        - GLKWS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:GLKWS -d -a -in dev/ci_secret_gpg_subkeys.pgp.enc | $GPG_EXECUTABLE --import 
-        - GPG_SIGN_CMD="$GPG_EXECUTABLE --batch --yes --detach-sign --armor --local-user $GPG_KEYID"
-        #- # $GPG_EXECUTABLE --list-keys
-        - echo "Signing wheels"
-        - $GPG_SIGN_CMD --output $BDIST_WHEEL_PATH.asc $BDIST_WHEEL_PATH
-        - ls wheelhouse
-        - echo "Verifying wheels"
-        - $GPG_EXECUTABLE --verify $BDIST_WHEEL_PATH.asc $BDIST_WHEEL_PATH  || echo "hack, the first run of gpg very fails"
-        - $GPG_EXECUTABLE --verify $BDIST_WHEEL_PATH.asc $BDIST_WHEEL_PATH 
-        - echo "Verified wheels"
+#    script: 
+#        - ls wheelhouse
+#        - MB_PYTHON_TAG=py3-none-any
+#        - VERSION=$(python -c "import setup; print(setup.VERSION)")
+#        - BDIST_WHEEL_PATH=wheelhouse/kwimage-${VERSION}-${MB_PYTHON_TAG}.whl
+#        - export GPG_EXECUTABLE=gpg
+#        - export GPG_KEYID=$(cat dev/public_gpg_key)
+#        - echo "GPG_KEYID = $GPG_KEYID"
+#        # Decrypt and import GPG Keys / trust
+#        # note the variable pointed to by VARNAME_CI_SECRET is a protected variables only available on master and release branch
+#        - source dev/secrets_configuration.sh
+#        - CI_SECRET=${!VARNAME_CI_SECRET}
+#        - PUSH_TOKEN=${!VARNAME_PUSH_TOKEN}
+#        - $GPG_EXECUTABLE --version
+#        - openssl version
+#        - $GPG_EXECUTABLE --list-keys
+#        # note CI_KITWARE_SECRET is a protected variables only available on master and release branch
+#        - GLKWS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:GLKWS -d -a -in dev/ci_public_gpg_key.pgp.enc | $GPG_EXECUTABLE --import 
+#        - GLKWS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:GLKWS -d -a -in dev/gpg_owner_trust.enc | $GPG_EXECUTABLE --import-ownertrust
+#        - GLKWS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:GLKWS -d -a -in dev/ci_secret_gpg_subkeys.pgp.enc | $GPG_EXECUTABLE --import 
+#        - GPG_SIGN_CMD="$GPG_EXECUTABLE --batch --yes --detach-sign --armor --local-user $GPG_KEYID"
+#        #- # $GPG_EXECUTABLE --list-keys
+#        - echo "Signing wheels"
+#        - $GPG_SIGN_CMD --output $BDIST_WHEEL_PATH.asc $BDIST_WHEEL_PATH
+#        - ls wheelhouse
+#        - echo "Verifying wheels"
+#        - $GPG_EXECUTABLE --verify $BDIST_WHEEL_PATH.asc $BDIST_WHEEL_PATH  || echo "hack, the first run of gpg very fails"
+#        - $GPG_EXECUTABLE --verify $BDIST_WHEEL_PATH.asc $BDIST_WHEEL_PATH 
+#        - echo "Verified wheels"
 
-    artifacts:
-        paths:
-            - wheelhouse/*.asc
+#    artifacts:
+#        paths:
+#            - wheelhouse/*.asc
 
-    only:
-        refs:
-            # Gitlab will only expose protected variables on protected branches
-            # (which I've set to be master and release), so only run this stage
-            # there.
-            - master
-            - main
-            - release
-    image:
-        python:3.7
+#    only:
+#        refs:
+#            # Gitlab will only expose protected variables on protected branches
+#            # (which I've set to be master and release), so only run this stage
+#            # there.
+#            - master
+#            - main
+#            - release
+#    image:
+#        python:3.7
 
 
 deploy/wheels:
