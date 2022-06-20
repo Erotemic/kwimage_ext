@@ -35,7 +35,7 @@ stages:
         - linux
         - docker
         - privileged
-        - small-pypkg-smart
+        #- small-pypkg-smart
 
     image: gitlab.kitware.com:4567/computer-vision/ci-docker/podman:3.2.1
 
@@ -128,7 +128,7 @@ stages:
         - docker
         - linux
         - build
-        - small-pypkg-smart
+        #- small-pypkg-smart
 
     variables:
         # Change pip's cache directory to be inside the project directory since we can
