@@ -51,7 +51,7 @@ stages:
         - mkdir -p ".cache/containers/vfs-storage/"
         # Configure cibuildwheel options
         #- export CIBW_SKIP="pp* cp27-* cp35-*"
-        - export CIBW_SKIP="pp*"
+        #- export CIBW_SKIP="pp* cp27-* cp34-* cp35-* cp36-* *-musllinux_*"
         # Configure podman options (specific to custom cibuildwheel fork)
         - export CIBW_CONTAINER_ENGINE="podman"
         #- export CIBW_OCI_EXTRA_ARGS_CREATE="--events-backend=file --privileged"
