@@ -205,7 +205,7 @@ stages:
       - ls wheelhouse || echo "wheelhouse does not exist"
       - pip install toml
       - MOD_NAME=$(python -c "import toml; print(toml.load(open('pyproject.toml'))['tool']['xcookie']['mod_name'])")
-      - pip install "${MOD_NAME}"[headless] -f wheelhouse
+      - pip install "${MOD_NAME}"[tests,headless] -f wheelhouse
       - *_run_tests_in_sandboxed_dir
 
 .test_full_strict_template: &test_full_strict_template
@@ -234,7 +234,7 @@ stages:
       - ls wheelhouse || echo "wheelhouse does not exist"
       - pip install toml
       - MOD_NAME=$(python -c "import toml; print(toml.load(open('pyproject.toml'))['tool']['xcookie']['mod_name'])")
-      - pip install "${MOD_NAME}"[runtime-strict,headless-strict] -f wheelhouse
+      - pip install "${MOD_NAME}"[runtime-strict,tests-strict,headless-strict] -f wheelhouse
       - *_run_tests_in_sandboxed_dir
 
 
