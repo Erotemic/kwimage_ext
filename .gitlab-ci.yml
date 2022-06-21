@@ -42,7 +42,6 @@ stages:
     script:
         - podman --version
         - podman info --debug
-        #- python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@dev/flow
         #- python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support-backup-2022-06-16
         - python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support
         - pwd
@@ -50,14 +49,8 @@ stages:
         # NOTE: this requires that some mechanism exists in cibuildwheel to
         # ignore this directory when it copys the repo into the container
         - mkdir -p ".cache/containers/vfs-storage/"
-        # Configure cibuildwheel options
-        #- export CIBW_SKIP="pp* cp27-* cp35-*"
-        #- export CIBW_SKIP="pp*"
         # Configure podman options (specific to custom cibuildwheel fork)
         - export CIBW_CONTAINER_ENGINE="podman"
-        #- export CIBW_OCI_EXTRA_ARGS_CREATE="--events-backend=file --privileged"
-        #- export CIBW_OCI_EXTRA_ARGS_COMMON="--cgroup-manager=cgroupfs --storage-driver=vfs --root=$HOME/.local/share/containers/vfs-storage/"
-        #- export CIBW_OCI_EXTRA_ARGS_START="--events-backend=file --cgroup-manager=cgroupfs --storage-driver=vfs"
         - |
           codeblock()
           {
@@ -313,43 +306,43 @@ gpgsign/wheels:
 # ---------------
 # Python 3.10 Jobs
 
-#build/cp3_10-cp3_10-linux:
-#    <<: 
-#        - *cibuildwheel_template
-#    variables:
-#        CIBW_BUILD: "cp310-*"
+build/cp3_10-cp3_10-linux:
+    <<: 
+        - *cibuildwheel_template
+    variables:
+        CIBW_BUILD: "cp310-*"
 
-#test_full_loose/cp3_10-cp3_10-linux:
-#    <<: 
-#        - *test_full_loose_template
-#    image:
-#        *image_python3_10
-#    needs: 
-#        -  build/cp3_10-cp3_10-linux
+test_full_loose/cp3_10-cp3_10-linux:
+    <<: 
+        - *test_full_loose_template
+    image:
+        *image_python3_10
+    needs: 
+        -  build/cp3_10-cp3_10-linux
 
-#test_minimal_loose/cp3_10-cp3_10-linux:
-#    <<: 
-#        - *test_minimal_loose_template
-#    image:
-#        *image_python3_10
-#    needs: 
-#        -  build/cp3_10-cp3_10-linux
+test_minimal_loose/cp3_10-cp3_10-linux:
+    <<: 
+        - *test_minimal_loose_template
+    image:
+        *image_python3_10
+    needs: 
+        -  build/cp3_10-cp3_10-linux
 
-#test_full_strict/cp3_10-cp3_10-linux:
-#    <<: 
-#        - *test_full_strict_template
-#    image:
-#        *image_python3_10
-#    needs: 
-#        -  build/cp3_10-cp3_10-linux
+test_full_strict/cp3_10-cp3_10-linux:
+    <<: 
+        - *test_full_strict_template
+    image:
+        *image_python3_10
+    needs: 
+        -  build/cp3_10-cp3_10-linux
 
-#test_minimal_strict/cp3_10-cp3_10-linux:
-#    <<: 
-#        - *test_minimal_strict_template
-#    image:
-#        *image_python3_10
-#    needs: 
-#        -  build/cp3_10-cp3_10-linux
+test_minimal_strict/cp3_10-cp3_10-linux:
+    <<: 
+        - *test_minimal_strict_template
+    image:
+        *image_python3_10
+    needs: 
+        -  build/cp3_10-cp3_10-linux
 
 # ---------------
 # Python 3.9 Jobs
