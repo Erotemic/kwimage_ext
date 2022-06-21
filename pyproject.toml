@@ -18,8 +18,8 @@ build = "cp37-* cp38-* cp39-* cp310-*"
 #build-frontend = "build"
 skip = "pp* cp27-* cp34-* cp35-* *-musllinux_*"
 # We need numpy i686 wheels to use auto
-archs = ["auto"]
-#archs = ["x86_64"]
+#archs = ["auto"]
+archs = ["x86_64"]
 #archs = ["i686"]
 build-verbosity = 1
 container-engine = "podman"
