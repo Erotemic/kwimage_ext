@@ -36,6 +36,7 @@ except Exception:
 def cython_cpu_nms(ltrb, scores, thresh, bias=0.0):
     """
     Example:
+        >>> import numpy as np
         >>> from kwimage_ext.algo.algo_nms import *  # NOQA
         >>> ltrb = np.array([
         >>>     [0, 0, 100, 100],
@@ -57,7 +58,7 @@ def cython_cpu_nms(ltrb, scores, thresh, bias=0.0):
     return keep
 
 
-def cython_gpu_nms(ltrb, scores, thresh, bias=0.0, device_id=None):
+def cython_gpu_gtms(ltrb, scores, thresh, bias=0.0, device_id=None):
     """
     FIXME: Broken
 
