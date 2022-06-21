@@ -6,8 +6,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## Version 0.0.2 - Unreleased
 
-
-## [Version 0.0.1] -
+## Version 0.1.0 - Released 2022-06-21
 
 ### Added
-* Initial version
+* Initial port from kwimage
