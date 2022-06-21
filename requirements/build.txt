@@ -3,8 +3,13 @@
 # python ~/local/tools/supported_python_versions_pip.py ninja
 # python ~/local/tools/supported_python_versions_pip.py Cython
 # python ~/local/tools/supported_python_versions_pip.py cffi
+# python ~/local/tools/supported_python_versions_pip.py numpy
 
-numpy>=1.19.2   # tensorflow minimum
+
+# numpy>=1.19.2   # tensorflow minimum
+# TODO use 1.21.6 to build i686 wheels for 3.10+
+numpy==1.21.2    ;                             python_version >= '3.10'    # Python 3.10+
+numpy==1.19.2    ; python_version < '3.10' and python_version >= '3.6'   # Python 3.6 - 3.9
 
 scikit-build>=0.11.0
 # scikit-build>=0.9.0
