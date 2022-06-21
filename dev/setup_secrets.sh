@@ -389,6 +389,11 @@ export_encrypted_code_signing_keys(){
 }
 
 
+# See the xcookie module gitlab python API
+#gitlab_set_protected_branches(){
+#}
+
+
 _test_gnu(){
     # shellcheck disable=SC2155
     export GNUPGHOME=$(mktemp -d -t)
