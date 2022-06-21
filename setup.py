@@ -265,9 +265,9 @@ if __name__ == '__main__':
     setup(
         name=NAME,
         version=VERSION,
-        author=static_parse('__author__', INIT_PATH),
-        author_email=static_parse('__author_email__', INIT_PATH),
-        url=static_parse('__url__', INIT_PATH),
+        author='Kitware Inc., Jon Crall',
+        author_email='kitware@kitware.com, jon.crall@kitware.com',
+        url='https://gitlab.kitware.com/computer-vision/kwimage_ext',
         description=('The kwimage_ext Module'),
         long_description=parse_description(),
         long_description_content_type='text/x-rst',
