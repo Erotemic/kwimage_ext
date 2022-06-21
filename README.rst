@@ -3,7 +3,7 @@ The kwimage_ext Module
 
 |ReadTheDocs| |Pypi| |Downloads| 
 
-The ``kwimage_ext`` module, which contains C extensions for the ``kwimage`` module.
+The ``kwimage_ext`` module, which contains binary extensions for the ``kwimage`` module.
 
 +------------------+----------------------------------------------+
 | Read the docs    | https://kwimage_ext.readthedocs.io           |

@@ -1,30 +1,25 @@
 [build-system]
-requires = [ "setuptools>=41.0.1", "wheel", "scikit-build>=0.9.0", "numpy", "ninja",]
-
-[tool.cibuildwheel]
-build = "cp37-* cp38-* cp39-* cp310-*"
-build-frontend = "build"
-skip = "pp* cp27-* cp34-* cp35-* cp36-* *-musllinux_*"
-build-verbosity = 1
-test-requires = [ "-r requirements/tests.txt",]
-test-command = "python {project}/run_tests.py"
-
-[tool.mypy]
-ignore_missing_imports = true
+# Build with an old numpy for forwards compat
+# reason: https://stackoverflow.com/questions/66060487/valueerror-numpy-ndarray-size-changed-may-indicate-binary-incompatibility-exp
+requires = [ "setuptools>=41.0.1", "wheel", "scikit-build>=0.9.0", "numpy==1.19.2", "ninja>=1.10.0", "cmake>=3.13.3", "cython", "cffi"]
 
 [tool.xcookie]
 tags = [ "kitware", "gitlab", "binpy",]
 mod_name = "kwimage_ext"
 repo_name = "kwimage_ext"
 
-[tool.cibuildwheel.linux]
-before-all = "yum install epel-release lz4 lz4-devel -y"
+[tool.cibuildwheel]
+build = "cp37-* cp38-* cp39-* cp310-*"
+#build-frontend = "build"
+skip = "pp* cp27-* cp34-* cp35-* *-musllinux_*"
+archs = ["x86_64"]
+build-verbosity = 1
+container-engine = "podman"
+# test-requires = [ "-r requirements/tests.txt",]
+# test-command = "python {project}/run_tests.py"
 
-[tool.cibuildwheel.windows]
-before-all = "choco install lz4 -y"
-
-[tool.cibuildwheel.macos]
-before-all = "brew install lz4"
+[tool.mypy]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "-p no:doctest --xdoctest --xdoctest-style=google --ignore-glob=setup.py"

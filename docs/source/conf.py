@@ -137,7 +137,7 @@ intersphinx_mapping = {
     # 'tqdm': ('https://tqdm.github.io/', None),
     # Requries that the repo have objects.inv
     'kwarray': ('https://kwarray.readthedocs.io/en/latest/', None),
-    'kwimage': ('https://kwimage.readthedocs.io/en/latest/', None),
+    'kwimage_ext': ('https://kwimage_ext.readthedocs.io/en/latest/', None),
     # 'kwplot': ('https://kwplot.readthedocs.io/en/latest/', None),
     'ndsampler': ('https://ndsampler.readthedocs.io/en/latest/', None),
     'ubelt': ('https://ubelt.readthedocs.io/en/latest/', None),
@@ -151,7 +151,7 @@ python -m sphinx.ext.intersphinx https://docs.python.org/3/objects.inv
 python -m sphinx.ext.intersphinx https://kwcoco.readthedocs.io/en/latest/objects.inv
 python -m sphinx.ext.intersphinx https://networkx.org/documentation/stable/objects.inv
 python -m sphinx.ext.intersphinx https://kwarray.readthedocs.io/en/latest/objects.inv
-python -m sphinx.ext.intersphinx https://kwimage.readthedocs.io/en/latest/objects.inv
+python -m sphinx.ext.intersphinx https://kwimage_ext.readthedocs.io/en/latest/objects.inv
 python -m sphinx.ext.intersphinx https://ubelt.readthedocs.io/en/latest/objects.inv
 python -m sphinx.ext.intersphinx https://networkx.org/documentation/stable/objects.inv
 """

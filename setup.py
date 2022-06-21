@@ -4,29 +4,32 @@ from os.path import exists
 
 from setuptools import find_packages
 
-if exists('CMakeLists.txt'):
-    try:
-        import os
-        # Hack to disable all compiled extensions
-        val = os.environ.get('DISABLE_C_EXTENSIONS', '').lower()
-        use_setuptools = val in {'true', 'on', 'yes', '1'}
+try:
+    import os
+    # Hack to disable all compiled extensions
+    val = os.environ.get('DISABLE_C_EXTENSIONS', '').lower()
+    use_setuptools = val in {'true', 'on', 'yes', '1'}
 
-        if '--universal' in sys.argv:
-            use_setuptools = True
-
-        if '--disable-c-extensions' in sys.argv:
-            sys.argv.remove('--disable-c-extensions')
-            use_setuptools = True
-
-    except ImportError:
+    if '--universal' in sys.argv:
         use_setuptools = True
-else:
+
+    if '--disable-c-extensions' in sys.argv:
+        sys.argv.remove('--disable-c-extensions')
+        use_setuptools = True
+
+except ImportError:
     use_setuptools = True
+
 
 if use_setuptools:
     from setuptools import setup
 else:
-    from skbuild import setup
+    try:
+        from skbuild import setup
+    except ImportError:
+        # Hack for dashboards which import this to get the version
+        # Eventually, just parse it out of pyproject?
+        from setuptools import setup
 
 
 def parse_version(fpath):
@@ -262,9 +265,9 @@ if __name__ == '__main__':
     setup(
         name=NAME,
         version=VERSION,
-        author=static_parse('__author__', INIT_PATH),
-        author_email=static_parse('__author_email__', INIT_PATH),
-        url=static_parse('__url__', INIT_PATH),
+        author='Kitware Inc., Jon Crall',
+        author_email='kitware@kitware.com, jon.crall@kitware.com',
+        url='https://gitlab.kitware.com/computer-vision/kwimage_ext',
         description=('The kwimage_ext Module'),
         long_description=parse_description(),
         long_description_content_type='text/x-rst',
