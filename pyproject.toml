@@ -1,5 +1,6 @@
 [build-system]
 # Build with an old numpy for forwards compat
+# reason: https://stackoverflow.com/questions/66060487/valueerror-numpy-ndarray-size-changed-may-indicate-binary-incompatibility-exp
 requires = [ "setuptools>=41.0.1", "wheel", "scikit-build>=0.9.0", "numpy==1.19.2", "ninja>=1.10.0", "cmake>=3.13.3", "cython", "cffi"]
 
 [tool.xcookie]
