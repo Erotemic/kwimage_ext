@@ -6,8 +6,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## Version 0.2.1 - Unreleased
 
+### Changes
+* Added i686 wheels
 
-## Version 0.0.2 - Released 2022-06-21
+## Version 0.2.0 - Released 2022-06-21
+
+### Fixed
+* Python 3.10 wheels
 
 ## Version 0.1.0 - Released 2022-06-21
 

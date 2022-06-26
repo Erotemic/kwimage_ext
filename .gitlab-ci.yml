@@ -35,7 +35,7 @@ stages:
         - linux
         - docker
         - privileged
-        #- small-pypkg-smart
+        ##- kitware-python-stack
 
     image: gitlab.kitware.com:4567/computer-vision/ci-docker/podman:3.2.1
 
@@ -44,6 +44,7 @@ stages:
         - podman info --debug
         #- python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support-backup-2022-06-16
         - python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support
+        #- python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support-2022-06-26
         - pwd
         - ls -al
         # NOTE: this requires that some mechanism exists in cibuildwheel to
