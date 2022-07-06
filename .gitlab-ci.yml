@@ -4,7 +4,7 @@
 # GITLAB LINTER
 # https://gitlab.kitware.com/computer-vision/xcookie/-/ci/lint
 
-.__heredoc__: &__heredoc__
+.__doc__: &__doc__
     - | 
         NOTE: INSTRUCTION HAVE BEEN MOVED TO ./dev/setup_secrets.sh
         This file should need minimal modification.
@@ -35,28 +35,25 @@ stages:
         - linux
         - docker
         - privileged
-        ##- kitware-python-stack
+        #- kitware-python-stack
 
     image: gitlab.kitware.com:4567/computer-vision/ci-docker/podman:3.2.1
 
     script:
         - podman --version
         - podman info --debug
-        #- python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support-backup-2022-06-16
-        - python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support
-        #- python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support-2022-06-26
+        - python3 -m pip install cibuildwheel>=2.8.0 
         - pwd
         - ls -al
         # NOTE: this requires that some mechanism exists in cibuildwheel to
         # ignore this directory when it copys the repo into the container
         - mkdir -p ".cache/containers/vfs-storage/"
         # Configure podman options (specific to custom cibuildwheel fork)
-        - export CIBW_CONTAINER_ENGINE="podman"
         - |
           codeblock()
           {
               PYEXE=python3
-              echo "$1" | $PYEXE -c "import sys; from textwrap import dedent; print(dedent(sys.stdin.read()).strip('\n'))"
+              echo "$1" | $PYEXE -c "import sys; from textwrap import dedent; print(dedent(sys.stdin.read()).strip(chr(10)))"
           }
           # Make a storage.conf and containers.conf file
           #
@@ -100,6 +97,7 @@ stages:
           cat $CONTAINERS_CONF
           cat $CONTAINERS_STORAGE_CONF
         - podman info --debug
+        - export CIBW_CONTAINER_ENGINE="podman"
         - cibuildwheel --config-file pyproject.toml --platform linux --print-build-identifiers
         - cibuildwheel --config-file pyproject.toml --output-dir wheelhouse --platform linux
         # - cibuildwheel --output-dir wheelhouse --platform linux --archs x86_64,i686,aarch64,ppc64le,s390x,universal2,arm64,x86,AMD64
