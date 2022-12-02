@@ -10,8 +10,12 @@ requires = [
 
 [tool.xcookie]
 tags = [ "kitware", "gitlab", "binpy",]
+author = "Kitware Inc., Jon Crall"
+author_email = 'kitware@kitware.com, jon.crall@kitware.com'
 mod_name = "kwimage_ext"
 repo_name = "kwimage_ext"
+dev_status = "alpha"
+min_python = 3.6
 
 [tool.cibuildwheel]
 build = "cp37-* cp38-* cp39-* cp310-* cp311-*"
