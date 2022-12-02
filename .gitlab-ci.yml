@@ -154,19 +154,21 @@ stages:
 
 # Define anchors to be used in "before_script" parts
 ._setup_virtualenv_template: &_setup_virtualenv_template |-
-    # Setup the correct version of python on this manylinux instance
+    # Setup the correct version of python (which should be the same as this instance)
     python --version  # Print out python version for debugging
+    export PYVER=$(python -c "import sys; print('{}{}'.format(*sys.version_info[0:2]))")
     python -m pip install virtualenv
-    python -m virtualenv venv
-    source venv/bin/activate
+    python -m virtualenv venv$PYVER
+    source venv$PYVER/bin/activate
     pip install pip -U
-    pip install setuptools -U
+    pip install pip setuptools -U
     pip install pygments
+    python --version  # Print out python version for debugging
 
 
 ._run_tests_in_sandboxed_dir: &_run_tests_in_sandboxed_dir |-
     # Hack to test the installed wheel. TODO: make run_tests work better in this case.
-    MOD_NAME=$(python -c "import toml; print(toml.load(open('pyproject.toml'))['tool']['xcookie']['mod_name'])")
+    MOD_NAME=$(python -c "import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['xcookie']['mod_name'])")
     mkdir -p sandbox && cd sandbox && pytest --xdoctest-verbose=3 -s --cov-config ../pyproject.toml --cov-report html --cov-report term --cov="$MOD_NAME" --xdoc $(python -c "import ubelt; print(ubelt.modname_to_modpath('${MOD_NAME}'))") ../tests
 
     
@@ -180,8 +182,8 @@ stages:
 
     script: 
       - ls wheelhouse || echo "wheelhouse does not exist"
-      - pip install toml
-      - MOD_NAME=$(python -c "import toml; print(toml.load(open('pyproject.toml'))['tool']['xcookie']['mod_name'])")
+      - pip install tomli
+      - MOD_NAME=$(python -c "import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['xcookie']['mod_name'])")
       - pip install "${MOD_NAME}"[all,headless] -f wheelhouse
       - *_run_tests_in_sandboxed_dir
 
@@ -195,8 +197,8 @@ stages:
 
     script:
       - ls wheelhouse || echo "wheelhouse does not exist"
-      - pip install toml
-      - MOD_NAME=$(python -c "import toml; print(toml.load(open('pyproject.toml'))['tool']['xcookie']['mod_name'])")
+      - pip install tomli
+      - MOD_NAME=$(python -c "import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['xcookie']['mod_name'])")
       - pip install "${MOD_NAME}"[tests,headless] -f wheelhouse
       - *_run_tests_in_sandboxed_dir
 
@@ -209,8 +211,8 @@ stages:
 
     script: 
       - ls wheelhouse || echo "wheelhouse does not exist"
-      - pip install toml
-      - MOD_NAME=$(python -c "import toml; print(toml.load(open('pyproject.toml'))['tool']['xcookie']['mod_name'])")
+      - pip install tomli
+      - MOD_NAME=$(python -c "import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['xcookie']['mod_name'])")
       - pip install "${MOD_NAME}"[all-strict,headless-strict] -f wheelhouse
       - *_run_tests_in_sandboxed_dir
 
@@ -224,8 +226,8 @@ stages:
 
     script:
       - ls wheelhouse || echo "wheelhouse does not exist"
-      - pip install toml
-      - MOD_NAME=$(python -c "import toml; print(toml.load(open('pyproject.toml'))['tool']['xcookie']['mod_name'])")
+      - pip install tomli
+      - MOD_NAME=$(python -c "import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['xcookie']['mod_name'])")
       - pip install "${MOD_NAME}"[runtime-strict,tests-strict,headless-strict] -f wheelhouse
       - *_run_tests_in_sandboxed_dir
 
@@ -253,9 +255,9 @@ gpgsign/wheels:
         - openssl version
         - $GPG_EXECUTABLE --list-keys
         # note CI_KITWARE_SECRET is a protected variables only available on master and release branch
-        - GLKWS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:GLKWS -d -a -in dev/ci_public_gpg_key.pgp.enc | $GPG_EXECUTABLE --import 
-        - GLKWS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:GLKWS -d -a -in dev/gpg_owner_trust.enc | $GPG_EXECUTABLE --import-ownertrust
-        - GLKWS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:GLKWS -d -a -in dev/ci_secret_gpg_subkeys.pgp.enc | $GPG_EXECUTABLE --import 
+        - CIS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:CIS -d -a -in dev/ci_public_gpg_key.pgp.enc | $GPG_EXECUTABLE --import 
+        - CIS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:CIS -d -a -in dev/gpg_owner_trust.enc | $GPG_EXECUTABLE --import-ownertrust
+        - CIS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:CIS -d -a -in dev/ci_secret_gpg_subkeys.pgp.enc | $GPG_EXECUTABLE --import 
         - GPG_SIGN_CMD="$GPG_EXECUTABLE --batch --yes --detach-sign --armor --local-user $GPG_KEYID"
 
         - |
@@ -287,6 +289,8 @@ gpgsign/wheels:
 
 
 # Aliases for the images that run the tests
+.image_python3_11: &image_python3_11
+    gitlab.kitware.com:4567/computer-vision/ci-docker/gl-python:3.11
 .image_python3_10: &image_python3_10
     gitlab.kitware.com:4567/computer-vision/ci-docker/gl-python:3.10
 .image_python39: &image_python39
@@ -302,6 +306,47 @@ gpgsign/wheels:
 ### JOBS ###
 # Define the actual jobs
 #
+# ---------------
+# Python 3.11 Jobs
+
+build/cp3_11-cp3_11-linux:
+    <<: 
+        - *cibuildwheel_template
+    variables:
+        CIBW_BUILD: "cp311-*"
+
+test_full_loose/cp3_11-cp3_11-linux:
+    <<: 
+        - *test_full_loose_template
+    image:
+        *image_python3_11
+    needs: 
+        -  build/cp3_11-cp3_11-linux
+
+test_minimal_loose/cp3_11-cp3_11-linux:
+    <<: 
+        - *test_minimal_loose_template
+    image:
+        *image_python3_11
+    needs: 
+        -  build/cp3_11-cp3_11-linux
+
+test_full_strict/cp3_11-cp3_11-linux:
+    <<: 
+        - *test_full_strict_template
+    image:
+        *image_python3_11
+    needs: 
+        -  build/cp3_11-cp3_11-linux
+
+test_minimal_strict/cp3_11-cp3_11-linux:
+    <<: 
+        - *test_minimal_strict_template
+    image:
+        *image_python3_11
+    needs: 
+        -  build/cp3_11-cp3_11-linux
+
 # ---------------
 # Python 3.10 Jobs
 
@@ -611,6 +656,12 @@ deploy/wheels:
             ./run_tests.py
 
 
+.__local_test_wheel__:
+  IMAGE_NAME=gitlab.kitware.com:4567/computer-vision/ci-docker/gl-python:3.6
+  docker run --privileged -v $PWD:/io:ro -v $HOME/.cache/pip:/pip_cache -it $IMAGE_NAME bash
+  cd /io
+
+
 .__local_podman_heredoc__:
         - | 
           # Test podman in docker locally
@@ -620,7 +671,7 @@ deploy/wheels:
           # https://github.com/containers/podman/issues/10802
           # Podman requires a clone system call
           # This invocation of docker with --privledged works around it:
-          docker run --privileged -v $PWD:/io:ro -v $HOME/.cache/pip:/pip_cache -v $HOME/code/cibuildwheel:/cibuildwheel -it $IMAGE_NAME bash
+          docker run --privileged -v $PWD:/io:ro -v $HOME/.cache/pip:/pip_cache -it $IMAGE_NAME bash
 
           # Once inside docker, we can test that podman works correctly
           mkdir -p "$HOME/.local/.cache/containers/vfs-storage/"
@@ -640,7 +691,7 @@ deploy/wheels:
           #python3 -m pip install .
           #python3 -m pip uninstall cibuildwheel
           #cibuildwheel --platform linux --print-build-identifiers
-          python3 -m pip install git+https://github.com/Erotemic/cibuildwheel.git@new_podman_support
+          python3 -m pip install cibuildwheel
 
           # Install the repo
           cd $HOME
@@ -657,7 +708,7 @@ deploy/wheels:
           cibuildwheel --platform linux --print-build-identifiers
 
           #export CIBW_OCI_EXTRA_ARGS_CREATE="--events-backend=file --cap-add CAP_SYS_ADMIN --cap-add=SYS_PTRACE"
-          export CIBW_SKIP="pp* cp310-* cp39-* cp37-* cp36-* *musllinux*"
+          export CIBW_SKIP="pp* cp310-* cp39-* cp38-* cp37-* *musllinux*"
           cibuildwheel --config-file pyproject.toml --platform linux --archs x86_64 --print-build-identifiers
           cd $HOME/repo
           export CIBW_CONTAINER_ENGINE="podman"
@@ -715,6 +766,4 @@ deploy/wheels:
           cat $CONTAINERS_STORAGE_CONF
 
           cd $HOME/repo
-          export CIBW_SKIP="pp* cp310-* cp39-* cp37-* cp36-* *musllinux*"
-          export CIBW_CONTAINER_ENGINE="podman"
-          cibuildwheel --output-dir wheelhouse --platform linux --archs x86_64
+          cibuildwheel --config-file pyproject.toml --platform linux --archs x86_64

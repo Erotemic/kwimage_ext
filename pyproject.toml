@@ -14,7 +14,7 @@ mod_name = "kwimage_ext"
 repo_name = "kwimage_ext"
 
 [tool.cibuildwheel]
-build = "cp37-* cp38-* cp39-* cp310-*"
+build = "cp37-* cp38-* cp39-* cp310-* cp311-*"
 #build-frontend = "build"
 skip = "pp* *-musllinux_*"
 # We need numpy i686 wheels to use auto
