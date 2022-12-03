@@ -1,2 +1,2 @@
-#!/bin/bash
-xdoctest kwimage_ext --style=google all
+#!/usr/bin/env bash
+xdoctest kwimage_ext --style=google all "$@"

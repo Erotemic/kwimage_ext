@@ -5,6 +5,17 @@ The kwimage_ext Module
 
 The ``kwimage_ext`` module, which contains binary extensions for the ``kwimage`` module.
 
+Setting the environment variable ``DISABLE_C_EXTENSIONS=1`` will disable C
+extensions at compile time, but this package is mostly C-extensions, so that's
+not very useful.
+
+
+Note, that when building from source, the build may fail if you not in a fresh
+state (related to
+`skbuild-386 <https://github.com/scikit-build/scikit-build/issues/386>`_. You
+can mitigate this by running ``python setup.py clean`` to remove build
+artifacts. Building from a clean environment should work.
+
 +------------------+----------------------------------------------+
 | Read the docs    | https://kwimage_ext.readthedocs.io           |
 +------------------+----------------------------------------------+

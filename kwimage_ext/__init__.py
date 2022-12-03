@@ -1,7 +1,7 @@
 """
 Binary extensions for kwimage
 """
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 
 __author__ = 'Kitware Inc., Jon Crall'
 __author_email__ = 'kitware@kitware.com, jon.crall@kitware.com'

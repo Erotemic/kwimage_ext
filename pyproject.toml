@@ -2,24 +2,34 @@
 # Build with an old numpy for forwards compat
 # reason: https://stackoverflow.com/questions/66060487/valueerror-numpy-ndarray-size-changed-may-indicate-binary-incompatibility-exp
 requires = [
-"setuptools>=41.0.1", "wheel", "scikit-build>=0.9.0", 
-"numpy==1.21.2 ; python_version >= '3.10'", 
+"setuptools>=41.0.1",
+"wheel",
+"scikit-build>=0.9.0", 
+"numpy==1.23.2 ; python_version < '4.0'  and python_version >= '3.11'",
+"numpy==1.21.6 ; python_version < '3.11' and python_version >= '3.10'",
 "numpy==1.19.2 ; python_version < '3.10' and python_version >= '3.6'", 
-"ninja>=1.10.0", "cmake>=3.13.3", "cython", "cffi"
+"ninja>=1.10.0",
+"cmake>=3.13.3",
+"cython",
+"cffi"
 ]
 
 [tool.xcookie]
 tags = [ "kitware", "gitlab", "binpy",]
+author = "Kitware Inc., Jon Crall"
+author_email = 'kitware@kitware.com, jon.crall@kitware.com'
 mod_name = "kwimage_ext"
 repo_name = "kwimage_ext"
+dev_status = "alpha"
+min_python = 3.6
 
 [tool.cibuildwheel]
-build = "cp37-* cp38-* cp39-* cp310-*"
+build = "cp37-* cp38-* cp39-* cp310-* cp311-*"
 #build-frontend = "build"
-skip = "pp* cp27-* cp34-* cp35-* *-musllinux_*"
+skip = "pp* *-musllinux_*"
 # We need numpy i686 wheels to use auto
-#archs = ["auto"]
-archs = ["x86_64"]
+archs = ["auto"]
+#archs = ["x86_64"]
 #archs = ["i686"]
 build-verbosity = 1
 container-engine = "podman"
