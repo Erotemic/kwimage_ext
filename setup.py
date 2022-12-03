@@ -254,7 +254,7 @@ if __name__ == "__main__":
     setupkw["name"] = NAME
     setupkw["version"] = VERSION
     setupkw["author"] = ["Kitware Inc.", "Jon Crall"]
-    setupkw["author_email"] = ["kitware@kitware.com", "jon.crall@kitware.com"]
+    setupkw["author_email"] = "jon.crall@kitware.com"
     setupkw["url"] = None
     setupkw["description"] = "The kwimage_ext module"
     setupkw["long_description"] = parse_description()

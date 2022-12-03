@@ -17,7 +17,8 @@ requires = [
 [tool.xcookie]
 tags = [ "kitware", "gitlab", "binpy",]
 author = "Kitware Inc., Jon Crall"
-author_email = 'kitware@kitware.com, jon.crall@kitware.com'
+#author_email = 'kitware@kitware.com, jon.crall@kitware.com'
+author_email = 'jon.crall@kitware.com'
 mod_name = "kwimage_ext"
 repo_name = "kwimage_ext"
 dev_status = "alpha"
