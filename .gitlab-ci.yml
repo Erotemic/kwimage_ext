@@ -20,7 +20,7 @@ stages:
   - test
   - gpgsign
   - deploy
-
+  - kitware-python-stack
 
 ### TEMPLATES ###
 # Define common templates using YAML anchors
