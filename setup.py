@@ -255,7 +255,7 @@ if __name__ == "__main__":
     setupkw["version"] = VERSION
     setupkw["author"] = ["Kitware Inc.", "Jon Crall"]
     setupkw["author_email"] = "jon.crall@kitware.com"
-    setupkw["url"] = None
+    setupkw["url"] = "https://gitlab.kitware.com/computer-vision/kwimage_ext"
     setupkw["description"] = "The kwimage_ext module"
     setupkw["long_description"] = parse_description()
     setupkw["long_description_content_type"] = "text/x-rst"
