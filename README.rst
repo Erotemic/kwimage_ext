@@ -1,7 +1,7 @@
 The kwimage_ext Module
 ======================
 
-|GitlabCIPipeline| |GitlabCICoverage| |Appveyor| |Pypi| |PypiDownloads| |ReadTheDocs|
+|GitlabCIPipeline| |GitlabCICoverage| |Pypi| |PypiDownloads| |ReadTheDocs|
 
 +------------------+-----------------------------------------------------------+
 | Read the docs    | https://kwimage_ext.readthedocs.io                        |
