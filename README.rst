@@ -1,7 +1,16 @@
 The kwimage_ext Module
 ======================
 
-|ReadTheDocs| |Pypi| |Downloads| 
+|GitlabCIPipeline| |GitlabCICoverage| |Appveyor| |Pypi| |PypiDownloads| |ReadTheDocs|
+
++------------------+-----------------------------------------------------------+
+| Read the docs    | https://kwimage_ext.readthedocs.io                        |
++------------------+-----------------------------------------------------------+
+| Gitlab (main)    | https://gitlab.kitware.com/computer-vision/kwimage_ext    |
++------------------+-----------------------------------------------------------+
+| Pypi             | https://pypi.org/project/kwimage_ext                      |
++------------------+-----------------------------------------------------------+
+
 
 The ``kwimage_ext`` module, which contains binary extensions for the ``kwimage`` module.
 
@@ -16,12 +25,6 @@ state (related to
 can mitigate this by running ``python setup.py clean`` to remove build
 artifacts. Building from a clean environment should work.
 
-+------------------+----------------------------------------------+
-| Read the docs    | https://kwimage_ext.readthedocs.io           |
-+------------------+----------------------------------------------+
-| Pypi             | https://pypi.org/project/kwimage_ext         |
-+------------------+----------------------------------------------+
-
 
 .. |CircleCI| image:: https://circleci.com/gh/Erotemic/kwimage_ext.svg?style=svg
     :target: https://circleci.com/gh/Erotemic/kwimage_ext
@@ -35,14 +38,20 @@ artifacts. Building from a clean environment should work.
 .. |Pypi| image:: https://img.shields.io/pypi/v/kwimage_ext.svg
    :target: https://pypi.python.org/pypi/kwimage_ext
 
-.. |Downloads| image:: https://img.shields.io/pypi/dm/kwimage_ext.svg
+.. |PypiDownloads| image:: https://img.shields.io/pypi/dm/kwimage_ext.svg
    :target: https://pypistats.org/packages/kwimage_ext
 
 .. |ReadTheDocs| image:: https://readthedocs.org/projects/kwimage_ext/badge/?version=latest
     :target: http://kwimage_ext.readthedocs.io/en/latest/
 
-.. |CodeQuality| image:: https://api.codacy.com/project/badge/Grade/4d815305fc014202ba7dea09c4676343   
+.. |CodeQuality| image:: https://api.codacy.com/project/badge/Grade/4d815305fc014202ba7dea09c4676343
     :target: https://www.codacy.com/manual/Erotemic/kwimage_ext?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=Erotemic/kwimage_ext&amp;utm_campaign=Badge_Grade
 
 .. |GithubActions| image:: https://github.com/Erotemic/kwimage_ext/actions/workflows/tests.yml/badge.svg?branch=main
     :target: https://github.com/Erotemic/kwimage_ext/actions?query=branch%3Amain
+
+.. |GitlabCIPipeline| image:: https://gitlab.kitware.com/computer-vision/kwimage_ext/badges/main/pipeline.svg
+   :target: https://gitlab.kitware.com/computer-vision/kwimage_ext/-/jobs
+
+.. |GitlabCICoverage| image:: https://gitlab.kitware.com/computer-vision/kwimage_ext/badges/main/coverage.svg
+    :target: https://gitlab.kitware.com/computer-vision/kwimage_ext/commits/main
