@@ -5,14 +5,19 @@ requires = [
 "setuptools>=41.0.1",
 "wheel",
 "scikit-build>=0.9.0", 
-"numpy==1.23.2 ; python_version < '4.0'  and python_version >= '3.11'",
-"numpy==1.21.6 ; python_version < '3.11' and python_version >= '3.10'",
-"numpy==1.19.2 ; python_version < '3.10' and python_version >= '3.6'", 
+"numpy>=2.1.0  ; python_version < '4.0'  and python_version >= '3.13'",    # Python 3.13+
+"numpy>=1.26.0 ; python_version < '3.13' and python_version >= '3.12'",    # Python 3.12
+"numpy>=1.23.2 ; python_version < '3.12' and python_version >= '3.11'",    # Python 3.11
+"numpy>=1.21.6 ; python_version < '3.11' and python_version >= '3.10'",
+"numpy>=1.19.3 ; python_version < '3.10' and python_version >= '3.9'", 
 "ninja>=1.10.0",
 "cmake>=3.13.3",
 "cython",
 "cffi"
 ]
+
+#requires = ["maturin>=1.7,<2.0"]
+#build-backend = "maturin"
 
 [tool.xcookie]
 tags = [ "kitware", "gitlab", "binpy",]
@@ -22,11 +27,11 @@ author_email = 'jon.crall@kitware.com'
 mod_name = "kwimage_ext"
 repo_name = "kwimage_ext"
 dev_status = "alpha"
-min_python = 3.6
+min_python = "3.9"
 url = 'https://gitlab.kitware.com/computer-vision/kwimage_ext'
 
 [tool.cibuildwheel]
-build = "cp37-* cp38-* cp39-* cp310-* cp311-*"
+build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
 #build-frontend = "build"
 skip = "pp* *-musllinux_*"
 # We need numpy i686 wheels to use auto
@@ -52,3 +57,6 @@ branch = true
 [tool.coverage.report]
 exclude_lines = [ "pragma: no cover", ".*  # pragma: no cover", ".*  # nocover", "def __repr__", "raise AssertionError", "raise NotImplementedError", "if 0:", "if trace is not None", "verbose = .*", "^ *raise", "^ *pass *$", "if _debug:", "if __name__ == .__main__.:", ".*if six.PY2:",]
 omit = [ "kwimage_ext/__main__.py", "*/setup.py",]
+
+#[tool.maturin]
+#features = ["pyo3/extension-module"]

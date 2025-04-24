@@ -1,5 +1,5 @@
 import numpy as np
-from distutils.version import LooseVersion
+from packaging.version import parse as LooseVersion
 
 
 try:
