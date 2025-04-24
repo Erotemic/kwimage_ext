@@ -17,7 +17,7 @@ Notes:
     # need to edit the conf.py
 
     cd ~/code/kwimage_ext/docs
-    sphinx-apidoc --private --separate -f -o ~/code/kwimage_ext/docs/source/auto ~/code/kwimage_ext/kwimage_ext
+    sphinx-apidoc --private --separate --force --output-dir ~/code/kwimage_ext/docs/source/auto ~/code/kwimage_ext/kwimage_ext
 
     # Note: the module should importable before running this
     # (e.g. install it in developer mode or munge the PYTHONPATH)
@@ -37,16 +37,16 @@ Notes:
 
         ### For gitlab
 
+        To enable the read-the-docs go to https://readthedocs.org/dashboard/ and login
+
         The user will need to enable the repo on their readthedocs account:
         https://readthedocs.org/dashboard/import/manual/?
 
-        To enable the read-the-docs go to https://readthedocs.org/dashboard/ and login
-
-        Make sure you have a .readthedocs.yml file
-
-        Click import project: (for github you can select, but gitlab you need to import manually)
+        Enter the following information:
             Set the Repository NAME: kwimage_ext
             Set the Repository URL: https://gitlab.kitware.com/computer-vision/kwimage_ext
+
+        Make sure you have a .readthedocs.yml file
 
         For gitlab you also need to setup an integrations. Navigate to:
 
@@ -136,7 +136,7 @@ def parse_version(fpath):
     return visitor.version
 
 project = 'kwimage_ext'
-copyright = '2024, Kitware Inc. Jon Crall'
+copyright = '2025, Kitware Inc. Jon Crall'
 author = 'Kitware Inc. Jon Crall'
 modname = 'kwimage_ext'
 
@@ -217,7 +217,7 @@ intersphinx_mapping = {
     # 'xxhash': ('https://pypi.org/project/xxhash/', None),
     # 'pygments': ('https://pygments.org/docs/', None),
     # 'tqdm': ('https://tqdm.github.io/', None),
-    # Requries that the repo have objects.inv
+    # Requires that the repo have objects.inv
     'kwarray': ('https://kwarray.readthedocs.io/en/latest/', None),
     'kwimage': ('https://kwimage.readthedocs.io/en/latest/', None),
     # 'kwplot': ('https://kwplot.readthedocs.io/en/latest/', None),
@@ -506,6 +506,17 @@ class GoogleStyleDocstringProcessor:
             new_lines.extend(lines[1:])
             return new_lines
 
+        # @self.register_section(tag='TODO', alias=['.. todo::'])
+        # def todo_section(lines):
+        #     """
+        #     Fixup todo sections
+        #     """
+        #     import xdev
+        #     xdev.embed()
+        #     import ubelt as ub
+        #     print('lines = {}'.format(ub.urepr(lines, nl=1)))
+        #     return new_lines
+
         @self.register_section(tag='Ignore')
         def ignore(lines):
             return []
@@ -577,7 +588,7 @@ class GoogleStyleDocstringProcessor:
 
             accum.append(line)
 
-        # Finialize the last section
+        # Finalize the last section
         accept()
 
         lines[:] = new_lines
