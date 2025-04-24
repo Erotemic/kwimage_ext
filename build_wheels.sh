@@ -9,8 +9,8 @@ SeeAlso:
     pyproject.toml
 "
 
-if ! which docker ; then
-    echo "Missing requirement: docker. Please install docker before running build_wheels.sh"
+if ! which podman ; then
+    echo "Missing requirement: podman. Please install podman before running build_wheels.sh"
     exit 1
 fi
 if ! which cibuildwheel ; then

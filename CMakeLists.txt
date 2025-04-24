@@ -5,7 +5,7 @@
 # https://github.com/Erotemic/netharn/issues/7
 # https://github.com/amueller/word_cloud/pull/42ci
 
-cmake_minimum_required(VERSION 3.13.0)
+cmake_minimum_required(VERSION 3.15.0)
 
 project(kwimage_ext LANGUAGES C CXX)
 
@@ -23,6 +23,12 @@ if (USE_CUDA)
         set(USE_CUDA OFF)
     endif()
 endif()
+
+# Modern Python detection
+# https://github.com/pypa/cibuildwheel/issues/639
+find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+include_directories(SYSTEM ${PYTHON_INCLUDE_DIR})
+
 
 # Setup basic python stuff and ensure we have skbuild
 list(INSERT CMAKE_MODULE_PATH 0 "${CMAKE_SOURCE_DIR}/CMake")

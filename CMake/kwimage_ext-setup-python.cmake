@@ -44,9 +44,11 @@ endfunction()
 # Find current python major version user option
 #
 
-find_package(PythonInterp REQUIRED)
-find_package(PythonLibs REQUIRED)
-include_directories(SYSTEM ${PYTHON_INCLUDE_DIR})
+# Done in the main cmake lists now
+#find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+#find_package(PythonInterp REQUIRED)
+#find_package(PythonLibs REQUIRED)
+#include_directories(SYSTEM ${PYTHON_INCLUDE_DIR})
 
 
 ###

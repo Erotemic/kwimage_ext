@@ -11,7 +11,7 @@ requires = [
 "numpy>=1.21.6 ; python_version < '3.11' and python_version >= '3.10'",
 "numpy>=1.19.3 ; python_version < '3.10' and python_version >= '3.9'", 
 "ninja>=1.10.0",
-"cmake>=3.13.3",
+"cmake>=3.15.0",
 "cython",
 "cffi"
 ]
@@ -40,6 +40,9 @@ archs = ["auto"]
 #archs = ["i686"]
 build-verbosity = 1
 container-engine = "podman"
+
+manylinux-x86_64-image = "manylinux2014"
+
 # test-requires = [ "-r requirements/tests.txt",]
 # test-command = "python {project}/run_tests.py"
 
