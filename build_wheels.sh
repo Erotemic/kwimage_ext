@@ -9,8 +9,8 @@ SeeAlso:
     pyproject.toml
 "
 
-if ! which podman ; then
-    echo "Missing requirement: podman. Please install podman before running build_wheels.sh"
+if ! which docker ; then
+    echo "Missing requirement: docker. Please install docker before running build_wheels.sh"
     exit 1
 fi
 if ! which cibuildwheel ; then
@@ -21,4 +21,4 @@ fi
 
 #pip wheel -w wheelhouse .
 # python -m build --wheel -o wheelhouse  #  kwimage_ext: +COMMENT_IF(binpy)
-cibuildwheel --config-file pyproject.toml --platform linux --arch x86_64  #  kwimage_ext: +UNCOMMENT_IF(binpy)
+cibuildwheel --config-file pyproject.toml --platform linux --archs x86_64  #  kwimage_ext: +UNCOMMENT_IF(binpy)
