@@ -20,7 +20,7 @@ requires = [
 #build-backend = "maturin"
 
 [tool.xcookie]
-tags = [ "kitware", "gitlab", "binpy", "github", "erotemic"]
+tags = [ "kitware", "gitlab", "binpy"]
 author = "Kitware Inc., Jon Crall"
 os = [ "all", "win", "osx", "linux",]
 rel_mod_parent_dpath = "."
