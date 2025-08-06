@@ -20,8 +20,10 @@ requires = [
 #build-backend = "maturin"
 
 [tool.xcookie]
-tags = [ "kitware", "gitlab", "binpy",]
+tags = [ "kitware", "gitlab", "binpy", "github", "erotemic"]
 author = "Kitware Inc., Jon Crall"
+os = [ "all", "win", "osx", "linux",]
+rel_mod_parent_dpath = "."
 #author_email = 'kitware@kitware.com, jon.crall@kitware.com'
 author_email = 'jon.crall@kitware.com'
 mod_name = "kwimage_ext"
