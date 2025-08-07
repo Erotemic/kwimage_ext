@@ -26,7 +26,7 @@ stages:
   - linux-x86_64
   - docker
   - privileged
-  image: gitlab.kitware.com:4567/computer-vision/ci-docker/podman:3.2.1
+  image: gitlab.kitware.com:4567/computer-vision/ci-docker/podman/3.2.1-uv0.8.4-python3.12
   script:
   - podman --version
   - podman info --debug
