@@ -29,11 +29,11 @@ author_email = 'jon.crall@kitware.com'
 mod_name = "kwimage_ext"
 repo_name = "kwimage_ext"
 dev_status = "alpha"
-min_python = "3.9"
+min_python = "3.10"
 url = 'https://gitlab.kitware.com/computer-vision/kwimage_ext'
 
 [tool.cibuildwheel]
-build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+build = "cp310-* cp311-* cp312-* cp313-*"
 #build-frontend = "build"
 skip = "pp* *-musllinux_*"
 # We need numpy i686 wheels to use auto
