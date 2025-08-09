@@ -463,6 +463,7 @@ test/minimal-loose/cp314-linux-x86_64:
   - build/cp314-linux-x86_64
   variables:
     UV_PRERELEASE: if-necessary
+    INDEX_STRATEGY: unsafe-best-match
     UV_INDEX: https://download.pytorch.org/whl/nightly/cpu
 test/full-loose/cp314-linux-x86_64:
   <<: *test_full-loose_template
@@ -471,6 +472,7 @@ test/full-loose/cp314-linux-x86_64:
   - build/cp314-linux-x86_64
   variables:
     UV_PRERELEASE: if-necessary
+    INDEX_STRATEGY: unsafe-best-match
     UV_INDEX: https://download.pytorch.org/whl/nightly/cpu
 test/minimal-strict/cp314-linux-x86_64:
   <<: *test_minimal-strict_template
@@ -479,6 +481,7 @@ test/minimal-strict/cp314-linux-x86_64:
   - build/cp314-linux-x86_64
   variables:
     UV_PRERELEASE: if-necessary
+    INDEX_STRATEGY: unsafe-best-match
     UV_INDEX: https://download.pytorch.org/whl/nightly/cpu
 test/full-strict/cp314-linux-x86_64:
   <<: *test_full-strict_template
@@ -487,6 +490,7 @@ test/full-strict/cp314-linux-x86_64:
   - build/cp314-linux-x86_64
   variables:
     UV_PRERELEASE: if-necessary
+    INDEX_STRATEGY: unsafe-best-match
     UV_INDEX: https://download.pytorch.org/whl/nightly/cpu
 gpgsign/wheels:
   <<: *common_template
