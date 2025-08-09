@@ -65,3 +65,6 @@ omit = [ "kwimage_ext/__main__.py", "*/setup.py",]
 
 #[tool.maturin]
 #features = ["pyo3/extension-module"]
+
+[tool.cibuildwheel.linux]
+before-all = "yum install -y libffi-devel"

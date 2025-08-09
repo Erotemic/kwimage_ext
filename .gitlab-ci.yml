@@ -26,7 +26,7 @@ stages:
   - linux-x86_64
   - docker
   - privileged
-  image: gitlab.kitware.com:4567/computer-vision/ci-docker/podman:v4.9.0-uv0.8.4-python3.12-cuda12.4.1-cudnn-devel-ubuntu22.04
+  image: gitlab.kitware.com:4567/computer-vision/ci-docker/podman:v4.9.0-uv0.8.8-python3.12-cuda12.4.1-cudnn-devel-ubuntu22.04
   script:
   - podman --version
   - podman info --debug
