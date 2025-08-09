@@ -131,7 +131,7 @@ stages:
   - echo "WHEEL_FPATH=$WHEEL_FPATH"
   - echo "INSTALL_EXTRAS=$INSTALL_EXTRAS"
   - echo "MOD_VERSION=$MOD_VERSION"
-  - python -m uv pip install --prerelease "kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION" -f wheelhouse
+  - python -m uv pip install --prerelease=allow "kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION" -f wheelhouse
   - echo "Install finished."
   - echo "Creating test sandbox directory"
   - export WORKSPACE_DNAME="sandbox"
@@ -198,7 +198,7 @@ stages:
   - echo "WHEEL_FPATH=$WHEEL_FPATH"
   - echo "INSTALL_EXTRAS=$INSTALL_EXTRAS"
   - echo "MOD_VERSION=$MOD_VERSION"
-  - python -m uv pip install --prerelease "kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION" -f wheelhouse
+  - python -m uv pip install --prerelease=allow "kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION" -f wheelhouse
   - echo "Install finished."
   - echo "Creating test sandbox directory"
   - export WORKSPACE_DNAME="sandbox"
@@ -265,7 +265,7 @@ stages:
   - echo "WHEEL_FPATH=$WHEEL_FPATH"
   - echo "INSTALL_EXTRAS=$INSTALL_EXTRAS"
   - echo "MOD_VERSION=$MOD_VERSION"
-  - python -m uv pip install --prerelease "kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION" -f wheelhouse
+  - python -m uv pip install --prerelease=allow "kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION" -f wheelhouse
   - echo "Install finished."
   - echo "Creating test sandbox directory"
   - export WORKSPACE_DNAME="sandbox"
@@ -332,7 +332,7 @@ stages:
   - echo "WHEEL_FPATH=$WHEEL_FPATH"
   - echo "INSTALL_EXTRAS=$INSTALL_EXTRAS"
   - echo "MOD_VERSION=$MOD_VERSION"
-  - python -m uv pip install --prerelease "kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION" -f wheelhouse
+  - python -m uv pip install --prerelease=allow "kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION" -f wheelhouse
   - echo "Install finished."
   - echo "Creating test sandbox directory"
   - export WORKSPACE_DNAME="sandbox"
