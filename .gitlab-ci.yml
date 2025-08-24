@@ -540,7 +540,7 @@ gpgsign/wheels:
   - CIS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:CIS -d -a -in dev/ci_secret_gpg_subkeys.pgp.enc | $GPG_EXECUTABLE --import
   - GPG_SIGN_CMD="$GPG_EXECUTABLE --batch --yes --detach-sign --armor --local-user $GPG_KEYID"
   - |-
-    WHEEL_PATHS=(wheelhouse/*.whl wheelhouse/*.tar.gz)
+    WHEEL_PATHS=(wheelhouse/*.whl)
     WHEEL_PATHS_STR=$(printf '"%s" ' "${WHEEL_PATHS[@]}")
     echo "$WHEEL_PATHS_STR"
     for WHEEL_PATH in "${WHEEL_PATHS[@]}"
@@ -554,7 +554,7 @@ gpgsign/wheels:
   - ls wheelhouse
   - python -m pip install pip uv -U
   - python -m uv pip install opentimestamps-client
-  - ots stamp wheelhouse/*.tar.gz wheelhouse/*.whl wheelhouse/*.asc
+  - ots stamp wheelhouse/*.whl wheelhouse/*.asc wheelhouse/*.tar.gz
   needs:
   - job: build/cp310-linux-x86_64
     artifacts: true
