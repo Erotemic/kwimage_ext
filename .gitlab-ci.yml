@@ -579,7 +579,7 @@ deploy/wheels:
   - ls wheelhouse
   - |-
     set -e
-    WHEEL_PATHS=(wheelhouse/*.whl wheelhouse/*.tar.gz)
+    WHEEL_PATHS=(wheelhouse/*.whl)
     WHEEL_PATHS_STR=$(printf '"%s" ' "${WHEEL_PATHS[@]}")
     source dev/secrets_configuration.sh
     TWINE_PASSWORD=${!VARNAME_TWINE_PASSWORD}
