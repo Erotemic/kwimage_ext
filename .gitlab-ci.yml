@@ -554,7 +554,7 @@ gpgsign/wheels:
   - ls wheelhouse
   - python -m pip install pip uv -U
   - python -m uv pip install opentimestamps-client
-  - ots stamp wheelhouse/*.whl wheelhouse/*.asc wheelhouse/*.tar.gz
+  - ots stamp wheelhouse/*.whl wheelhouse/*.asc
   needs:
   - job: build/cp310-linux-x86_64
     artifacts: true
