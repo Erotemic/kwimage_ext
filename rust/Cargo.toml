@@ -1,7 +1,9 @@
 [package]
-name = "kwimage_ext_rust"
-version = "0.1.0"
+name = "kwimage_ext"
+version = "0.3.2"
 edition = "2021"
+description = "Rust acceleration kernels for kwimage"
+license = "Apache-2.0"
 
 [lib]
 name = "_rust"
@@ -9,4 +11,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.22", features = ["abi3-py310", "extension-module"] }
+numpy = "0.22"
 
+# This crate is intentionally its own workspace root.  The repository may be
+# checked out inside a larger Cargo workspace (or have an experimental root
+# Cargo.toml during development), but maturin builds this manifest directly.
+# Keeping the extension crate self-contained prevents Cargo from walking up to
+# and accidentally binding it to an unrelated parent workspace.
+[workspace]
+resolver = "2"

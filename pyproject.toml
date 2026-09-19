@@ -1,23 +1,71 @@
 [build-system]
-# Build with an old numpy for forwards compat
-# reason: https://stackoverflow.com/questions/66060487/valueerror-numpy-ndarray-size-changed-may-indicate-binary-incompatibility-exp
-requires = [
-"setuptools>=41.0.1",
-"wheel",
-"scikit-build>=0.9.0", 
-"numpy>=2.1.0  ; python_version < '4.0'  and python_version >= '3.13'",    # Python 3.13+
-"numpy>=1.26.0 ; python_version < '3.13' and python_version >= '3.12'",    # Python 3.12
-"numpy>=1.23.2 ; python_version < '3.12' and python_version >= '3.11'",    # Python 3.11
-"numpy>=1.21.6 ; python_version < '3.11' and python_version >= '3.10'",
-"numpy>=1.19.3 ; python_version < '3.10' and python_version >= '3.9'", 
-"ninja>=1.10.0",
-"cmake>=3.15.0",
-"cython",
-"cffi"
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "kwimage_ext"
+version = "0.3.2"
+description = "Binary acceleration extensions for kwimage"
+readme = "README.rst"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Kitware Inc." },
+  { name = "Jon Crall", email = "jon.crall@kitware.com" },
+]
+dependencies = [
+  "ubelt>=1.3.3",
+  "numpy>=2.3.2; python_version >= '3.14'",
+  "numpy>=2.1.0; python_version >= '3.13' and python_version < '3.14'",
+  "numpy>=1.26.0; python_version >= '3.12' and python_version < '3.13'",
+  "numpy>=1.23.2; python_version >= '3.11' and python_version < '3.12'",
+  "numpy>=1.21.6; python_version >= '3.10' and python_version < '3.11'",
 ]
 
-#requires = ["maturin>=1.7,<2.0"]
-#build-backend = "maturin"
+[project.optional-dependencies]
+tests = [
+  "xdoctest>=1.1.5",
+  "pytest>=6.2.5",
+  "pytest-cov>=3.0.0",
+  "coverage>=6.1.1",
+]
+optional = ["torch>=1.11.0"]
+all = [
+  "xdoctest>=1.1.5",
+  "pytest>=6.2.5",
+  "pytest-cov>=3.0.0",
+  "coverage>=6.1.1",
+  "torch>=1.11.0",
+]
+# Keep generated CI extra names valid during the Rust transition.  These are
+# intentionally conservative aliases; xcookie can regenerate exact pins later.
+runtime-strict = []
+tests-strict = [
+  "xdoctest>=1.1.5",
+  "pytest>=6.2.5",
+  "pytest-cov>=3.0.0",
+  "coverage>=6.1.1",
+]
+optional-strict = ["torch>=1.11.0"]
+all-strict = [
+  "xdoctest>=1.1.5",
+  "pytest>=6.2.5",
+  "pytest-cov>=3.0.0",
+  "coverage>=6.1.1",
+  "torch>=1.11.0",
+]
+
+[project.urls]
+Homepage = "https://gitlab.kitware.com/computer-vision/kwimage_ext"
+Documentation = "https://kwimage_ext.readthedocs.io"
+
+[tool.maturin]
+manifest-path = "rust/Cargo.toml"
+python-source = "."
+module-name = "kwimage_ext._rust"
+bindings = "pyo3"
+features = ["pyo3/extension-module"]
+strip = false
 
 [tool.xcookie]
 tags = [ "kitware", "gitlab", "binpy", 'nosrcdist']
@@ -33,7 +81,7 @@ min_python = "3.10"
 url = 'https://gitlab.kitware.com/computer-vision/kwimage_ext'
 
 [tool.cibuildwheel]
-build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
+build = "cp310-*"
 #build-frontend = "build"
 skip = "pp* *-musllinux_*"
 # We need numpy i686 wheels to use auto
@@ -67,4 +115,5 @@ omit = [ "kwimage_ext/__main__.py", "*/setup.py",]
 #features = ["pyo3/extension-module"]
 
 [tool.cibuildwheel.linux]
-before-all = "yum install -y libffi-devel"
+before-all = "yum install -y curl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal"
+environment = { PATH = "$HOME/.cargo/bin:$PATH" }

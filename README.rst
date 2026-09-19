@@ -55,3 +55,26 @@ artifacts. Building from a clean environment should work.
 
 .. |GitlabCICoverage| image:: https://gitlab.kitware.com/computer-vision/kwimage_ext/badges/main/coverage.svg
     :target: https://gitlab.kitware.com/computer-vision/kwimage_ext/commits/main
+
+Rust-first development
+----------------------
+
+The default PEP-517 build uses ``maturin`` and installs the Rust extension as
+``kwimage_ext._rust``.  The public Python modules remain compatibility shims,
+so downstream ``kwimage`` imports do not need to change while kernels are
+ported.
+
+For an editable Rust build::
+
+    ./dev/build_rust.sh
+    python -m pytest tests/test_rust_backend.py tests/test_rust_shims.py
+
+The historical Cython/C sources are retained temporarily as a parity reference::
+
+    ./dev/build_legacy.sh
+
+Do not use the legacy build as the normal wheel path.  During the transition,
+backend selection is capability-aware: a Rust module is selected only when it
+implements every symbol required by a particular shim.  Set
+``KWIMAGE_EXT_FORCE_RUST=1`` in CI to prove that tests are not accidentally
+falling through to a legacy extension.

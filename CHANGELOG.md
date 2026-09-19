@@ -4,6 +4,11 @@ We are currently working on porting this changelog to the specifications in
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+* Optimize the Rust RLE IoU kernel by precomputing per-instance bounding boxes and detection areas once per matrix call, matching the original COCO C kernel structure instead of recomputing geometry for every mask pair.
+
 ## Version 0.3.2 - Unreleased
 
 
@@ -31,3 +36,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 * Initial port from kwimage
+
+## Unreleased
+
+### Rust backend transition
+
+* Make PEP-517 builds Rust-first via maturin / PyO3 with an abi3 Python 3.10+
+  extension, while retaining the Cython/C implementation as a temporary parity
+  reference under `dev/build_legacy.sh`.
+* Implement Rust box IoU/intersection/similarity kernels, COCO RLE
+  encode/decode/area/merge/IoU/bbox/polygon conversion, and CPU NMS.
+* Make backend dispatch capability-aware so a partial Rust module cannot shadow
+  a working legacy backend.
+* Harden mask input normalization: fix one-dimensional bbox handling, validate
+  `iscrowd` length, distinguish Nx2 polygons from bbox lists, handle degenerate
+  polygons as empty masks, and support NumPy 2 `__array__(dtype=..., copy=...)`
+  in the legacy reference implementation.
+* Prevent stale in-place pre-Rust extension modules from shadowing the Rust-first
+  public API in editable checkouts by registering non-colliding compatibility
+  modules under the historical import names.
+* Rename future Cython parity builds to explicit `*_legacy` extension names,
+  make backend forcing dynamic/testable, and make Rust validation fail when
+  parity tests fail rather than reporting build success alone.

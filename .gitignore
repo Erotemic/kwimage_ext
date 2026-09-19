@@ -95,3 +95,9 @@ profile_output.*
 _skbuild
 pip-wheel-metadata/
 wheelhouse
+
+*.tar.gz
+git-of-theseus/
+
+kwimage_ext/structs/_mask_backend/cython_mask.html
+kwimage_ext/structs/_mask_backend/cython_mask.c

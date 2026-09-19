@@ -1,0 +1,27 @@
+[package]
+name = "kwimage_rust_ext"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "kwimage_rust_ext"
+crate-type = ["cdylib"]
+
+[dependencies]
+blas-src = { version = "0.8", features = ["openblas"] }
+#ndarray = { version = "0.15.4", features = ["approx", "rayon"] }
+ndarray = { version = "0.16", features = ["rayon", "blas", "approx"] }
+ndarray-npy = { version = "0.8.1", default-features = false }
+#numpy = "0.18.0"
+numpy = { version = "0.21" }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+pyo3 = { version = "0.21", features = ["extension-module"] }
+#pyo3 = { version = "0.21", features = ["extension-module"] }
+rayon = "1.5.2"
+thiserror = "1.0.30"
+
+[build-dependencies]
+pyo3-build-config = "0.18.2"
+
+
+[workspace]

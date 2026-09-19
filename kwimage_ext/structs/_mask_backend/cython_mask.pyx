@@ -108,13 +108,17 @@ cdef class Masks:
         # it doesn't need to be freed here
 
     # called when passing into np.array() and return an np.ndarray in column-major order
-    def __array__(self):
+    def __array__(self, dtype=None, copy=None):
         cdef cnp.npy_intp shape[1]
         shape[0] = <cnp.npy_intp> self._h*self._w*self._n
         # Create a 1D array, and reshape it to fortran/Matlab column-major array
         ndarray = cnp.PyArray_SimpleNewFromData(1, shape, cnp.NPY_UINT8, self._mask).reshape((self._h, self._w, self._n), order='F')
         # The _mask allocated by Masks is now handled by ndarray
         PyArray_ENABLEFLAGS(ndarray, cnp.NPY_ARRAY_OWNDATA)
+        if dtype is not None:
+            ndarray = ndarray.astype(dtype, copy=False)
+        if copy is True:
+            ndarray = ndarray.copy()
         return ndarray
 
 # internal conversion from Python RLEs object to compressed RLE format
@@ -192,7 +196,7 @@ def iou( dt, gt, pyiscrowd ):
             return objs
         if type(objs) == np.ndarray:
             if len(objs.shape) == 1:
-                objs = objs.reshape((objs[0], 1))
+                objs = objs.reshape((1, objs.shape[0]))
             # check if it's Nx4 bbox
             if not len(objs.shape) == 2 or not objs.shape[1] == 4:
                 raise Exception('numpy ndarray input is only for *bounding boxes* and should have Nx4 dimension')
@@ -233,6 +237,8 @@ def iou( dt, gt, pyiscrowd ):
     gt = _preproc(gt)
     m = _len(dt)
     n = _len(gt)
+    if len(iscrowd) != n:
+        raise ValueError('iscrowd length must equal number of ground truths')
     if m == 0 or n == 0:
         return []
     if not type(dt) == type(gt):
@@ -304,26 +310,45 @@ def frUncompressedRLE(ucRles, siz h, siz w):
     return objs
 
 def frPyObjects(pyobj, h, w):
-    # encode rle from a list of python objects
+    # Robustly distinguish bboxes, polygons, and RLE dictionaries.
     if type(pyobj) == cnp.ndarray:
-        objs = frBbox(pyobj, h, w)
-    elif type(pyobj) == list and len(pyobj[0]) == 4:
-        objs = frBbox(pyobj, h, w)
-    elif type(pyobj) == list and len(pyobj[0]) > 4:
-        objs = frPoly(pyobj, h, w)
-    elif type(pyobj) == list and type(pyobj[0]) == dict \
-        and 'counts' in pyobj[0] and 'size' in pyobj[0]:
-        objs = frUncompressedRLE(pyobj, h, w)
-    # encode rle from single python object
-    elif type(pyobj) == list and len(pyobj) == 4:
-        objs = frBbox([pyobj], h, w)[0]
-    elif type(pyobj) == list and len(pyobj) > 4:
-        objs = frPoly([pyobj], h, w)[0]
+        arr = np.asarray(pyobj)
+        if arr.ndim == 1 and arr.size == 4:
+            return frBbox(arr.reshape(1, 4).astype(np.double), h, w)[0]
+        elif arr.ndim == 2 and arr.shape[1] == 4:
+            return frBbox(arr.astype(np.double), h, w)
+        elif arr.ndim == 2 and arr.shape[1] == 2:
+            return frPoly([arr.reshape(-1).tolist()], h, w)[0]
+        else:
+            raise ValueError('unsupported ndarray shape for frPyObjects: {}'.format(arr.shape))
     elif type(pyobj) == dict and 'counts' in pyobj and 'size' in pyobj:
-        objs = frUncompressedRLE([pyobj], h, w)[0]
+        if isinstance(pyobj['counts'], (list, tuple, np.ndarray)):
+            return frUncompressedRLE([pyobj], h, w)[0]
+        return pyobj
+    elif type(pyobj) == list:
+        if len(pyobj) == 0:
+            return []
+        if all(isinstance(item, dict) for item in pyobj):
+            if all(isinstance(item.get('counts'), (list, tuple, np.ndarray)) for item in pyobj):
+                return frUncompressedRLE(pyobj, h, w)
+            return pyobj
+        if all(np.isscalar(item) for item in pyobj):
+            if len(pyobj) == 4:
+                return frBbox(np.asarray([pyobj], dtype=np.double), h, w)[0]
+            elif len(pyobj) >= 6 and len(pyobj) % 2 == 0:
+                return frPoly([pyobj], h, w)[0]
+            raise ValueError('flat input must be a bbox or polygon')
+        arr = np.asarray(pyobj)
+        if arr.ndim == 2 and arr.shape[1] == 2:
+            return frPoly([arr.reshape(-1).tolist()], h, w)[0]
+        lengths = [len(item) for item in pyobj]
+        if all(length == 4 for length in lengths):
+            return frBbox(np.asarray(pyobj, dtype=np.double), h, w)
+        elif all(length >= 6 and length % 2 == 0 for length in lengths):
+            return frPoly(pyobj, h, w)
+        raise ValueError('nested input must be Nx4 bboxes, Nx2 points, or flat polygon parts')
     else:
         raise Exception('input type is not supported.')
-    return objs
 
 
 @cython.boundscheck(False)

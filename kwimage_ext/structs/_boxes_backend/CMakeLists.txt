@@ -3,7 +3,7 @@ option(BUILD_BOXES_CYTHON "Are your IoU ops TOO SLOW? Try Cython!" True)
 if (BUILD_BOXES_CYTHON)
 
   set(cython_source "cython_boxes.pyx")
-  set(module_name "cython_boxes")
+  set(module_name "cython_boxes_legacy")
 
   # Translate Cython into C/C++
   add_cython_target(${module_name} "${cython_source}" C OUTPUT_VAR sources)

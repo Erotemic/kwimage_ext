@@ -3,7 +3,7 @@ option(BUILD_MASK_CYTHON "Enable cython masks" TRUE)
 if (BUILD_MASK_CYTHON)
 
   set(cython_source "cython_mask.pyx")
-  set(module_name "cython_mask")
+  set(module_name "cython_mask_legacy")
 
   # Translate Cython into C/C++
   add_cython_target(${module_name} "${cython_source}" C OUTPUT_VAR sources)
