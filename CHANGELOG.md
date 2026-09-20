@@ -6,6 +6,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## Version 0.3.3 - Unreleased
 
+### Changed
+* Opt both GitHub Actions and GitLab CI releases into PyPI Trusted Publishing so release uploads use short-lived OIDC credentials instead of long-lived Twine passwords.
+* Keep the Python and Maturin crate version mirrors synchronized with the PEP 621 package version for the 0.3.3 development cycle.
+
 
 ## Version 0.3.2 - Released 2026-09-20
 

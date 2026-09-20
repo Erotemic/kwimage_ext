@@ -98,6 +98,7 @@ github_url = "https://github.com/Erotemic/kwimage_ext"
 max_python = "3.14"
 ci_cpython_versions = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 ci_reusable_wheels = true
+ci_pypi_trusted_publishing = ["github", "gitlab"]
 ci_wheel_build_post_commands = ["python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl"]
 
 [tool.xcookie.test_env]

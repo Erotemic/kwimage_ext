@@ -4,3 +4,41 @@
 include:
 - local: .gitlab/ci/main.yml
 - local: .gitlab/ci/checks.yml
+
+# GitLab PyPI Trusted Publishing setup checklist
+#
+# This top-level pipeline:
+#   .gitlab-ci.yml
+# Repository:
+#   https://gitlab.kitware.com/computer-vision/kwimage_ext
+# OIDC issuer / GitLab instance:
+#   https://gitlab.kitware.com
+#
+# Official references:
+#   https://docs.pypi.org/trusted-publishers/
+#   https://docs.pypi.org/trusted-publishers/using-a-publisher/
+#   https://docs.pypi.org/trusted-publishers/security-model/
+#   https://blog.pypi.org/posts/2025-11-10-trusted-publishers-coming-to-orgs/
+#   https://docs.gitlab.com/ci/secrets/id_token_authentication/
+#
+# PyPI publisher fields for this repository:
+#   GitLab instance: https://gitlab.kitware.com
+#   namespace: computer-vision
+#   repository: kwimage_ext
+#   top-level pipeline: .gitlab-ci.yml
+#   environment: pypi
+# Project publishing page:
+#   https://pypi.org/manage/project/kwimage-ext/settings/publishing/
+#
+# GitLab Self-Managed note:
+#   PyPI announced self-managed GitLab Trusted Publishing as a beta in
+#   November 2025. During the beta the issuer must be onboarded by PyPI
+#   staff. If this GitLab instance is not offered by PyPI yet, contact
+#   support+orgs@pypi.org and request onboarding for:
+#     https://gitlab.kitware.com
+#   before the release pipeline is expected to publish successfully.
+#
+# Security note:
+#   PyPI trusts claims for the top-level .gitlab-ci.yml pipeline. Included
+#   GitLab CI fragments run under that pipeline identity, so changes to
+#   the top-level pipeline and its includes are security-sensitive.

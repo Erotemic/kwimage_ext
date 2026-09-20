@@ -665,19 +665,6 @@ deploy/wheels:
   - ls wheelhouse
   - |-
     set -e
-    WHEEL_PATHS=(wheelhouse/*.whl)
-    WHEEL_PATHS_STR=$(printf '"%s" ' "${WHEEL_PATHS[@]}")
-    source dev/secrets_configuration.sh
-    TWINE_PASSWORD=${!VARNAME_TWINE_PASSWORD}
-    TWINE_USERNAME=${!VARNAME_TWINE_USERNAME}
-    echo "$WHEEL_PATHS_STR"
-    for WHEEL_PATH in "${WHEEL_PATHS[@]}"
-    do
-        twine check $WHEEL_PATH
-        twine upload --username $TWINE_USERNAME --password $TWINE_PASSWORD $WHEEL_PATH || echo "upload already exists"
-    done
-  - |-
-    set -e
     export PROJECT_VERSION=$(python -c 'import ast, pathlib; tree = ast.parse(pathlib.Path('"'"'kwimage_ext/__init__.py'"'"').read_text()); print(next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and any(getattr(t, "id", None) == "__version__" for t in n.targets)))')
 
                     # Have the server git-tag the release and push the tags
@@ -775,6 +762,37 @@ deploy/wheels:
                             --data "$RELEASE_DATA_JSON" \
                             --request POST \
                             "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases"
+publish/pypi:
+  <<: *common_template
+  image: python:3.14
+  stage: deploy
+  only:
+    refs:
+    - release
+  needs:
+  - job: gpgsign/wheels
+    artifacts: true
+  id_tokens:
+    PYPI_ID_TOKEN:
+      aud: pypi
+  environment:
+    name: pypi
+  script:
+  - python -m uv pip install twine -U
+  - ls wheelhouse
+  - |-
+    set -e
+    WHEEL_PATHS=(wheelhouse/*.whl)
+    WHEEL_PATHS_STR=$(printf '"%s" ' "${WHEEL_PATHS[@]}")
+    echo "$WHEEL_PATHS_STR"
+    for WHEEL_PATH in "${WHEEL_PATHS[@]}"
+    do
+        twine check "$WHEEL_PATH"
+        # PYPI_ID_TOKEN is supplied by GitLab's OIDC provider.
+        # With no explicit username/password, Twine exchanges it
+        # for a short-lived PyPI API token and performs the upload.
+        twine upload --skip-existing "$WHEEL_PATH"
+    done
 
 
 # end

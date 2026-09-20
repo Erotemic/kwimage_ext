@@ -83,6 +83,26 @@ def test_ci_uses_xcookie_native_reusable_wheel_contract():
     assert 'https://github.com/Erotemic/kwimage_ext/settings/environments' in github_release
     assert 'owner: Erotemic' in github_release
 
+    # Trusted Publishing is explicitly enabled for both mirrors. GitHub keeps
+    # its existing dedicated release workflow; GitLab isolates OIDC to a
+    # minimal publisher job instead of exposing the token to release plumbing.
+    assert 'ci_pypi_trusted_publishing = ["github", "gitlab"]' in pyproject_text
+    assert 'GitLab PyPI Trusted Publishing setup checklist' in gitlab_root
+    assert 'GitLab instance: https://gitlab.kitware.com' in gitlab_root
+    assert 'namespace: computer-vision' in gitlab_root
+    assert 'repository: kwimage_ext' in gitlab_root
+    assert 'top-level pipeline: .gitlab-ci.yml' in gitlab_root
+    assert 'publish/pypi:' in gitlab_text
+    publish_text = gitlab_text.split('publish/pypi:', 1)[1]
+    assert 'PYPI_ID_TOKEN:' in publish_text
+    assert 'aud: pypi' in publish_text
+    assert 'name: pypi' in publish_text
+    assert 'job: gpgsign/wheels' in publish_text
+    assert 'twine upload --skip-existing "$WHEEL_PATH"' in publish_text
+    deploy_text = gitlab_text.split('deploy/wheels:', 1)[1].split('publish/pypi:', 1)[0]
+    assert 'PYPI_ID_TOKEN' not in deploy_text
+    assert 'twine upload' not in deploy_text
+
 
 def test_release_version_and_rust_manifest_agree():
     import re
