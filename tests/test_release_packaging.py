@@ -10,7 +10,7 @@ def test_pyproject_is_authoritative_release_metadata():
     assert 'requires-python = ">=3.10"' in text
     assert 'license = "Apache-2.0"' in text
     assert 'license = { text =' not in text
-    for version in ['3.10', '3.11', '3.12', '3.13', '3.14']:
+    for version in ['3.10', '3.11', '3.12', '3.13', '3.14', '3.15']:
         assert f'"Programming Language :: Python :: {version}"' in text
 
     # The legacy build entrypoint must not maintain a second dependency or
@@ -31,23 +31,29 @@ def test_ci_uses_xcookie_native_reusable_wheel_contract():
     gitlab_text = (REPO_DPATH / '.gitlab/ci/main.yml').read_text()
     gitlab_checks = (REPO_DPATH / '.gitlab/ci/checks.yml').read_text()
 
-    # Keep the release support range explicit so xcookie does not silently
-    # extend CI onto the next prerelease interpreter.
-    assert 'max_python = "3.14"' in pyproject_text
+    # Let xcookie infer the current supported CPython range from the 3.10
+    # floor.  This picks up 3.15 as a prerelease lane without another manual
+    # ceiling/list edit, while xcookie's prerelease policy keeps it nonblocking.
+    assert 'max_python =' not in pyproject_text
+    assert 'ci_cpython_versions =' not in pyproject_text
     assert 'ci_reusable_wheels = true' in pyproject_text
     assert 'archs = ["auto64"]' in pyproject_text
     assert 'github_url = "https://github.com/Erotemic/kwimage_ext"' in pyproject_text
     assert 'KWIMAGE_EXT_FORCE_RUST = "1"' in pyproject_text
     assert 'python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl' in pyproject_text
+    assert "torch>=1.11.0; python_version < '3.15'" in pyproject_text
     assert './dev/check_backend_parity.sh' in pyproject_text
     assert "python -m pip install -e '.[tests]'" in pyproject_text
 
     # Reusable ABI3 packaging means one build per platform, not one build per
-    # Python minor. The same platform artifact is then exercised on 3.10-3.14.
+    # Python minor. The same platform artifact is then exercised on 3.10-3.15.
     assert 'build/reusable-linux-x86_64:' in gitlab_text
     assert 'build/cp311-linux-x86_64:' not in gitlab_text
-    assert 'cp315' not in gitlab_text
-    assert 'cp315' not in github_text
+    assert 'build/cp315-' not in gitlab_text
+    assert 'build = "cp310-*"' in pyproject_text
+    assert "python-version: '3.15'" in github_text
+    assert "allow-prereleases: 'true'" in github_text
+    assert 'image: python:3.15-rc' in gitlab_text
     assert 'Download wheel for this platform' in github_text
     assert 'name: wheels-${{ matrix.os }}-${{ matrix.arch }}' in github_text
 
@@ -111,6 +117,7 @@ def test_release_version_and_rust_manifest_agree():
     pyproject_text = (REPO_DPATH / 'pyproject.toml').read_text()
     init_text = (REPO_DPATH / 'kwimage_ext/__init__.py').read_text()
     cargo_text = (REPO_DPATH / 'rust/Cargo.toml').read_text()
+    cargo_lock_text = (REPO_DPATH / 'rust/Cargo.lock').read_text()
 
     project_block = pyproject_text.split('[project]', 1)[1].split('[project.optional-dependencies]', 1)[0]
     project_version = re.search(r'^version = "([^"]+)"$', project_block, re.MULTILINE).group(1)
@@ -119,6 +126,9 @@ def test_release_version_and_rust_manifest_agree():
     cargo_version = re.search(r'^version = "([^"]+)"$', cargo_package, re.MULTILINE).group(1)
 
     assert project_version == init_version == cargo_version
+    lock_package = cargo_lock_text.split('name = "kwimage_ext"', 1)[1].split('[[package]]', 1)[0]
+    lock_version = re.search(r'^version = "([^"]+)"$', lock_package, re.MULTILINE).group(1)
+    assert lock_version == project_version
     assert 'manifest-path = "rust/Cargo.toml"' in pyproject_text
     assert 'python-packages = ["kwimage_ext"]' in pyproject_text
     assert 'features = ["abi3-py310", "extension-module"]' in cargo_text
