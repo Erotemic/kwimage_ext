@@ -282,10 +282,9 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - uses: actions/download-artifact@v4.1.8
-      name: Download wheels
+      name: Download wheel for this platform
       with:
-        pattern: wheels-*
-        merge-multiple: true
+        name: wheels-${{ matrix.os }}-${{ matrix.arch }}
         path: wheelhouse
     - name: Install wheel ${{ matrix.install-extras }}
       shell: bash
@@ -297,27 +296,19 @@ jobs:
         echo "Installing helpers"
         python -m pip install pip uv -U
         python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
-        python -m uv pip install tomli pkginfo
         export WHEEL_FPATH=$(python -c "if 1:
             import pathlib
-            dist_dpath = pathlib.Path('wheelhouse')
-            candidates = list(dist_dpath.glob('kwimage_ext*.whl'))
-            candidates += list(dist_dpath.glob('kwimage_ext*.tar.gz'))
-            fpath = sorted(candidates)[-1]
-            print(str(fpath).replace(chr(92), chr(47)))
-        ")
-        export MOD_VERSION=$(python -c "if 1:
-            from pkginfo import Wheel, SDist
-            import pathlib
-            fpath = '$WHEEL_FPATH'
-            cls = Wheel if fpath.endswith('.whl') else SDist
-            item = cls(fpath)
-            print(item.version)
+            candidates = sorted(pathlib.Path('wheelhouse').glob('kwimage_ext*.whl'))
+            if len(candidates) != 1:
+                raise SystemExit(f'expected exactly one wheel, found: {candidates!r}')
+            print(candidates[0].resolve().as_uri())
         ")
         echo "WHEEL_FPATH=$WHEEL_FPATH"
         echo "INSTALL_EXTRAS=$INSTALL_EXTRAS"
-        echo "MOD_VERSION=$MOD_VERSION"
-        python -m uv pip install "kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION" -f wheelhouse
+        # Install the exact artifact produced by build_binpy_wheels.  Do not
+        # resolve kwimage_ext by version from an index: that can accidentally
+        # test an already-published wheel instead of the candidate artifact.
+        python -m uv pip install --force-reinstall "kwimage_ext[$INSTALL_EXTRAS] @ $WHEEL_FPATH"
         echo "Install finished."
     - name: Test wheel ${{ matrix.install-extras }}
       shell: bash
