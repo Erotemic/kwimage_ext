@@ -88,6 +88,7 @@ stages:
   - cibuildwheel --config-file pyproject.toml --output-dir wheelhouse --platform linux
   - ls $CIBW_OCI_ROOT
   - ls wheelhouse
+  - python dev/check_wheel_artifact.py wheelhouse/kwimage_ext*.whl
   artifacts:
     paths:
     - wheelhouse/
@@ -98,6 +99,8 @@ stages:
   except:
     refs:
     - release
+  variables:
+    KWIMAGE_EXT_FORCE_RUST: '1'
 .test_minimal-loose_template: &test_minimal-loose_template
   <<: *common_test_template
   before_script:
@@ -494,171 +497,121 @@ stages:
   - |-
     python -m pytest --verbose --xdoctest --cov-config ../pyproject.toml --cov-report term --durations=100 --cov="$MOD_NAME" "$MOD_DPATH" ../tests
   - echo "pytest command finished, moving the coverage file to the repo root"
-build/cp310-linux-x86_64:
+build/reusable-linux-x86_64:
   <<: *cibuildwheel_template
-  variables:
-    CIBW_BUILD: cp310-*
 test/minimal-loose/cp310-linux-x86_64:
   <<: *test_minimal-loose_template
   image: python:3.10
   needs:
-  - build/cp310-linux-x86_64
-build/cp311-linux-x86_64:
-  <<: *cibuildwheel_template
-  variables:
-    CIBW_BUILD: cp311-*
+  - build/reusable-linux-x86_64
 test/minimal-loose/cp311-linux-x86_64:
   <<: *test_minimal-loose_template
   image: python:3.11
   needs:
-  - build/cp311-linux-x86_64
-build/cp312-linux-x86_64:
-  <<: *cibuildwheel_template
-  variables:
-    CIBW_BUILD: cp312-*
+  - build/reusable-linux-x86_64
 test/minimal-loose/cp312-linux-x86_64:
   <<: *test_minimal-loose_template
   image: python:3.12
   needs:
-  - build/cp312-linux-x86_64
-build/cp313-linux-x86_64:
-  <<: *cibuildwheel_template
-  variables:
-    CIBW_BUILD: cp313-*
+  - build/reusable-linux-x86_64
 test/minimal-loose/cp313-linux-x86_64:
   <<: *test_minimal-loose_template
   image: python:3.13
   needs:
-  - build/cp313-linux-x86_64
-build/cp314-linux-x86_64:
-  <<: *cibuildwheel_template
-  variables:
-    CIBW_BUILD: cp314-*
+  - build/reusable-linux-x86_64
 test/minimal-loose/cp314-linux-x86_64:
   <<: *test_minimal-loose_template
   image: python:3.14
   needs:
-  - build/cp314-linux-x86_64
-build/cp315-linux-x86_64:
-  <<: *cibuildwheel_template
-  variables:
-    CIBW_BUILD: cp315-*
-  allow_failure: true
-test/minimal-loose/cp315-linux-x86_64:
-  <<: *test_minimal-loose_template
-  image: python:3.15-rc
-  needs:
-  - build/cp315-linux-x86_64
-  variables:
-    UV_PRERELEASE: allow
-    UV_INDEX_STRATEGY: unsafe-best-match
-    UV_INDEX: https://pypi.org/simple https://download.pytorch.org/whl/nightly/cpu
-  allow_failure: true
+  - build/reusable-linux-x86_64
 test/full-loose/cp310-linux-x86_64:
   <<: *test_full-loose_template
   image: python:3.10
   needs:
-  - build/cp310-linux-x86_64
+  - build/reusable-linux-x86_64
 test/full-loose/cp311-linux-x86_64:
   <<: *test_full-loose_template
   image: python:3.11
   needs:
-  - build/cp311-linux-x86_64
+  - build/reusable-linux-x86_64
 test/full-loose/cp312-linux-x86_64:
   <<: *test_full-loose_template
   image: python:3.12
   needs:
-  - build/cp312-linux-x86_64
+  - build/reusable-linux-x86_64
 test/full-loose/cp313-linux-x86_64:
   <<: *test_full-loose_template
   image: python:3.13
   needs:
-  - build/cp313-linux-x86_64
+  - build/reusable-linux-x86_64
 test/full-loose/cp314-linux-x86_64:
   <<: *test_full-loose_template
   image: python:3.14
   needs:
-  - build/cp314-linux-x86_64
-test/full-loose/cp315-linux-x86_64:
-  <<: *test_full-loose_template
-  image: python:3.15-rc
-  needs:
-  - build/cp315-linux-x86_64
-  variables:
-    UV_PRERELEASE: allow
-    UV_INDEX_STRATEGY: unsafe-best-match
-    UV_INDEX: https://pypi.org/simple https://download.pytorch.org/whl/nightly/cpu
-  allow_failure: true
+  - build/reusable-linux-x86_64
 test/minimal-strict/cp310-linux-x86_64:
   <<: *test_minimal-strict_template
   image: python:3.10
   needs:
-  - build/cp310-linux-x86_64
+  - build/reusable-linux-x86_64
 test/minimal-strict/cp311-linux-x86_64:
   <<: *test_minimal-strict_template
   image: python:3.11
   needs:
-  - build/cp311-linux-x86_64
+  - build/reusable-linux-x86_64
 test/minimal-strict/cp312-linux-x86_64:
   <<: *test_minimal-strict_template
   image: python:3.12
   needs:
-  - build/cp312-linux-x86_64
+  - build/reusable-linux-x86_64
 test/minimal-strict/cp313-linux-x86_64:
   <<: *test_minimal-strict_template
   image: python:3.13
   needs:
-  - build/cp313-linux-x86_64
+  - build/reusable-linux-x86_64
 test/minimal-strict/cp314-linux-x86_64:
   <<: *test_minimal-strict_template
   image: python:3.14
   needs:
-  - build/cp314-linux-x86_64
-test/minimal-strict/cp315-linux-x86_64:
-  <<: *test_minimal-strict_template
-  image: python:3.15-rc
-  needs:
-  - build/cp315-linux-x86_64
-  variables:
-    UV_PRERELEASE: allow
-    UV_INDEX_STRATEGY: unsafe-best-match
-    UV_INDEX: https://pypi.org/simple https://download.pytorch.org/whl/nightly/cpu
-  allow_failure: true
+  - build/reusable-linux-x86_64
 test/full-strict/cp310-linux-x86_64:
   <<: *test_full-strict_template
   image: python:3.10
   needs:
-  - build/cp310-linux-x86_64
+  - build/reusable-linux-x86_64
 test/full-strict/cp311-linux-x86_64:
   <<: *test_full-strict_template
   image: python:3.11
   needs:
-  - build/cp311-linux-x86_64
+  - build/reusable-linux-x86_64
 test/full-strict/cp312-linux-x86_64:
   <<: *test_full-strict_template
   image: python:3.12
   needs:
-  - build/cp312-linux-x86_64
+  - build/reusable-linux-x86_64
 test/full-strict/cp313-linux-x86_64:
   <<: *test_full-strict_template
   image: python:3.13
   needs:
-  - build/cp313-linux-x86_64
+  - build/reusable-linux-x86_64
 test/full-strict/cp314-linux-x86_64:
   <<: *test_full-strict_template
   image: python:3.14
   needs:
-  - build/cp314-linux-x86_64
-test/full-strict/cp315-linux-x86_64:
-  <<: *test_full-strict_template
-  image: python:3.15-rc
-  needs:
-  - build/cp315-linux-x86_64
-  variables:
-    UV_PRERELEASE: allow
-    UV_INDEX_STRATEGY: unsafe-best-match
-    UV_INDEX: https://pypi.org/simple https://download.pytorch.org/whl/nightly/cpu
-  allow_failure: true
+  - build/reusable-linux-x86_64
+check/backend-parity:
+  <<: *common_template
+  stage: test
+  image: python:3.13
+  except:
+    refs:
+    - release
+  script:
+  - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+  - export PATH="$HOME/.cargo/bin:$PATH"
+  - rustc --version
+  - cargo --version
+  - ./dev/check_backend_parity.sh
 gpgsign/wheels:
   <<: *common_template
   image: python:3.14
@@ -710,17 +663,7 @@ gpgsign/wheels:
   - python -m uv pip install opentimestamps-client
   - ots stamp wheelhouse/*.whl wheelhouse/*.asc
   needs:
-  - job: build/cp310-linux-x86_64
-    artifacts: true
-  - job: build/cp311-linux-x86_64
-    artifacts: true
-  - job: build/cp312-linux-x86_64
-    artifacts: true
-  - job: build/cp313-linux-x86_64
-    artifacts: true
-  - job: build/cp314-linux-x86_64
-    artifacts: true
-  - job: build/cp315-linux-x86_64
+  - job: build/reusable-linux-x86_64
     artifacts: true
 deploy/wheels:
   <<: *common_template

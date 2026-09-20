@@ -82,7 +82,7 @@ features = ["pyo3/extension-module"]
 strip = false
 
 [tool.xcookie]
-tags = [ "kitware", "gitlab", "binpy", 'nosrcdist']
+tags = ["kitware", "gitlab", "github", "binpy", "nosrcdist"]
 author = "Kitware Inc., Jon Crall"
 os = [ "all", "win", "osx", "linux",]
 rel_mod_parent_dpath = "."
@@ -93,7 +93,20 @@ repo_name = "kwimage_ext"
 dev_status = "alpha"
 min_python = "3.10"
 url = 'https://gitlab.kitware.com/computer-vision/kwimage_ext'
+github_url = "https://github.com/Erotemic/kwimage_ext"
+max_python = "3.14"
+ci_cpython_versions = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+ci_reusable_wheels = true
+ci_wheel_build_post_commands = ["python dev/check_wheel_artifact.py wheelhouse/kwimage_ext*.whl"]
 
+[tool.xcookie.test_env]
+KWIMAGE_EXT_FORCE_RUST = "1"
+
+[tool.xcookie.ci_source_checks.backend-parity]
+name = "Rust vs legacy parity"
+python_version = "3.13"
+setup_commands = ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal", "export PATH=\"$HOME/.cargo/bin:$PATH\"", "rustc --version", "cargo --version"]
+commands = ["./dev/check_backend_parity.sh"]
 [tool.cibuildwheel]
 # PyO3 is built with abi3-py310, so build one CPython 3.10 baseline wheel per
 # platform and exercise that same artifact on every supported Python >= 3.10.

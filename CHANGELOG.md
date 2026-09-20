@@ -18,6 +18,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 * Keep historical C/Cython extensions as development-only `*_legacy` reference modules rather than shipping both binary stacks.
 * Make `pyproject.toml` the single source of truth for production package metadata while keeping `setup.py` only as a legacy parity-build entry point.
 * Install the exact wheel artifact in CI instead of resolving `kwimage_ext` by version from package indexes during artifact tests.
+* Make the Rust-first parity, reusable ABI3 wheel matrix, artifact validation, and GitHub/GitLab workflows declarative through xcookie configuration rather than hand-maintained CI edits.
 * Make backend dispatch capability-aware so a partial Rust module cannot shadow a working legacy backend.
 * Rename future Cython parity builds to explicit `*_legacy` extension names, make backend forcing dynamic/testable, and make Rust validation fail when parity tests fail rather than reporting build success alone.
 

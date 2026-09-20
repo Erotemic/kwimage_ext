@@ -22,25 +22,47 @@ def test_pyproject_is_authoritative_release_metadata():
     assert 'python_requires' not in main_text
 
 
-def test_ci_installs_exact_wheel_artifact():
+def test_ci_uses_xcookie_native_reusable_wheel_contract():
+    pyproject_text = (REPO_DPATH / 'pyproject.toml').read_text()
     github_text = (REPO_DPATH / '.github/workflows/tests.yml').read_text()
+    github_release = (REPO_DPATH / '.github/workflows/release.yml').read_text()
     gitlab_text = (REPO_DPATH / '.gitlab-ci.yml').read_text()
 
-    stale_version_resolver = 'kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION'
-    assert stale_version_resolver not in github_text
-    assert stale_version_resolver not in gitlab_text
+    # Keep the release support range explicit so xcookie does not silently
+    # extend CI onto the next prerelease interpreter.
+    assert 'max_python = "3.14"' in pyproject_text
+    assert 'ci_reusable_wheels = true' in pyproject_text
+    assert 'github_url = "https://github.com/Erotemic/kwimage_ext"' in pyproject_text
+    assert 'KWIMAGE_EXT_FORCE_RUST = "1"' in pyproject_text
+    assert 'python dev/check_wheel_artifact.py wheelhouse/kwimage_ext*.whl' in pyproject_text
+    assert './dev/check_backend_parity.sh' in pyproject_text
 
-    direct_ref = 'kwimage_ext[$INSTALL_EXTRAS] @ $WHEEL_FPATH'
-    assert direct_ref in github_text
-    assert direct_ref in gitlab_text
-    assert '--force-reinstall' in github_text
-    assert '--force-reinstall' in gitlab_text
-
-    # GitHub builds Linux/macOS/Windows wheels in parallel. Each test leg should
-    # download only its own wheel instead of merging every platform artifact.
+    # Reusable ABI3 packaging means one build per platform, not one build per
+    # Python minor. The same platform artifact is then exercised on 3.10-3.14.
+    assert 'build/reusable-linux-x86_64:' in gitlab_text
+    assert 'build/cp311-linux-x86_64:' not in gitlab_text
+    assert 'cp315' not in gitlab_text
+    assert 'cp315' not in github_text
+    assert 'Download wheel for this platform' in github_text
     assert 'name: wheels-${{ matrix.os }}-${{ matrix.arch }}' in github_text
-    test_job = github_text.split('  test_binpy_wheels:', 1)[1].split('  test_deploy:', 1)[0]
-    assert 'pattern: wheels-*' not in test_job
+
+    # Artifact tests install a path selected from the downloaded wheelhouse,
+    # rather than resolving kwimage_ext by version from an external index.
+    for text in [github_text, gitlab_text]:
+        assert 'kwimage_ext[$INSTALL_EXTRAS]==$MOD_VERSION' not in text
+        assert 'WHEEL_FPATH' in text
+        assert 'INSTALL_TARGET="${WHEEL_FPATH}' in text
+        assert 'KWIMAGE_EXT_FORCE_RUST' in text
+        assert 'check_wheel_artifact.py' in text
+        assert 'check_backend_parity.sh' in text
+
+    # GitHub release publication is now a separate xcookie-owned workflow.
+    assert 'test_deploy:' not in github_text
+    assert 'live_deploy:' not in github_text
+    assert 'test_deploy:' in github_release
+    assert 'live_deploy:' in github_release
+    assert 'https://github.com/Erotemic/kwimage_ext/settings/environments' in github_release
+    assert 'owner: Erotemic' in github_release
 
 
 def test_release_version_and_rust_manifest_agree():
