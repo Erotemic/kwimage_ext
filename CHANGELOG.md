@@ -11,6 +11,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 * Keep the Python and Maturin crate version mirrors synchronized with the PEP 621 package version for the 0.3.3 development cycle.
 
 
+### Fixed
+* Keep reusable wheel builds on one native 64-bit artifact per runner; cibuildwheel's `auto` policy otherwise builds both AMD64 and x86 on 64-bit Windows and the x86 wheel cannot be artifact-audited by the x64 CI interpreter.
+* Make Rust-first static type checking understand the dynamically loaded PyO3 assignment backend, avoid importing torch for the intentionally unsupported GPU-NMS compatibility path, and narrowly suppress stale diagnostics in the pre-existing experimental `torch_nms.py` helper.
+
 ## Version 0.3.2 - Released 2026-09-20
 
 ### Added

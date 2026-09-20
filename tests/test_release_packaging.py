@@ -35,6 +35,7 @@ def test_ci_uses_xcookie_native_reusable_wheel_contract():
     # extend CI onto the next prerelease interpreter.
     assert 'max_python = "3.14"' in pyproject_text
     assert 'ci_reusable_wheels = true' in pyproject_text
+    assert 'archs = ["auto64"]' in pyproject_text
     assert 'github_url = "https://github.com/Erotemic/kwimage_ext"' in pyproject_text
     assert 'KWIMAGE_EXT_FORCE_RUST = "1"' in pyproject_text
     assert 'python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl' in pyproject_text
@@ -141,3 +142,26 @@ def test_release_validation_is_artifact_isolated():
     assert 'validate_wheel_artifact.py' in build_script
     assert 'pip wheel --no-deps' in candidate_script
     assert 'validate_wheel_artifact.py' in candidate_script
+
+
+
+def test_typecheck_policy_matches_rust_first_backend():
+    pyproject_text = (REPO_DPATH / 'pyproject.toml').read_text()
+    assignment_text = (REPO_DPATH / 'kwimage_ext/algo/assignment.py').read_text()
+    algo_nms_text = (REPO_DPATH / 'kwimage_ext/algo/algo_nms.py').read_text()
+
+    # The compiled PyO3 module is discovered dynamically at runtime, just like
+    # the other capability-aware Rust dispatchers. Static checking must not
+    # require a generated extension stub merely to import this frontend.
+    assert "importlib.import_module('kwimage_ext._rust')" in assignment_text
+    assert 'from kwimage_ext import _rust' not in assignment_text
+
+    # GPU NMS is an explicit compatibility stub in the Rust rewrite; the
+    # frontend should raise its NotImplementedError without requiring torch.
+    assert 'import torch' not in algo_nms_text
+
+    # Keep ty strict over the active package while narrowly relaxing only the
+    # pre-existing experimental torch_nms helper, which declares itself broken.
+    assert 'include = ["kwimage_ext/algo/_nms_backend/torch_nms.py"]' in pyproject_text
+    assert 'unresolved-import = "ignore"' in pyproject_text
+    assert 'unresolved-attribute = "ignore"' in pyproject_text
