@@ -8,4 +8,9 @@ set -euo pipefail
 # Rust-first compatibility modules.
 python dev/clean_stale_legacy_artifacts.py
 python -m pip install -r requirements/build.txt
+
+# The parity oracle is CPU-only.  CMAKE_ARGS is honored by scikit-build and
+# prevents a CUDA-capable developer machine from turning this reference build
+# into an unrelated GPU build as a side effect.
+export CMAKE_ARGS="${CMAKE_ARGS:-} -DUSE_CUDA=OFF"
 python setup.py build_ext --inplace

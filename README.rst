@@ -12,18 +12,19 @@ The kwimage_ext Module
 +------------------+-----------------------------------------------------------+
 
 
-The ``kwimage_ext`` module, which contains binary extensions for the ``kwimage`` module.
+The ``kwimage_ext`` module contains acceleration extensions used by
+``kwimage``.  Normal installs are Rust-first: the public compatibility API is
+implemented in Python and dispatches supported kernels to the
+``kwimage_ext._rust`` PyO3 extension.
 
-Setting the environment variable ``DISABLE_C_EXTENSIONS=1`` will disable C
-extensions at compile time, but this package is mostly C-extensions, so that's
-not very useful.
+Install a released wheel in the usual way::
 
+    python -m pip install kwimage_ext
 
-Note, that when building from source, the build may fail if you not in a fresh
-state (related to
-`skbuild-386 <https://github.com/scikit-build/scikit-build/issues/386>`_. You
-can mitigate this by running ``python setup.py clean`` to remove build
-artifacts. Building from a clean environment should work.
+Building from source requires a Rust toolchain because the normal PEP-517
+backend is ``maturin``.  CMake and Cython are not required for the production
+wheel; they are only needed by maintainers when building the historical parity
+backend.
 
 
 .. |CircleCI| image:: https://circleci.com/gh/Erotemic/kwimage_ext.svg?style=svg
@@ -69,12 +70,23 @@ For an editable Rust build::
     ./dev/build_rust.sh
     python -m pytest tests/test_rust_backend.py tests/test_rust_shims.py
 
-The historical Cython/C sources are retained temporarily as a parity reference::
+The historical Cython/C sources are retained temporarily as a parity reference.
+To rebuild both implementations and require direct semantic parity::
 
-    ./dev/build_legacy.sh
+    ./dev/check_backend_parity.sh
 
-Do not use the legacy build as the normal wheel path.  During the transition,
-backend selection is capability-aware: a Rust module is selected only when it
+``dev/build_legacy.sh`` is available when only the reference extensions are
+needed.  It builds CPU reference modules under explicit ``*_legacy`` names;
+those binaries are not part of the normal wheel.
+
+Backend selection is capability-aware: a Rust module is selected only when it
 implements every symbol required by a particular shim.  Set
-``KWIMAGE_EXT_FORCE_RUST=1`` in CI to prove that tests are not accidentally
-falling through to a legacy extension.
+``KWIMAGE_EXT_FORCE_RUST=1`` to prove that a test is not accidentally falling
+through to a legacy extension.  ``KWIMAGE_EXT_FORCE_LEGACY=1`` is intended for
+maintainer diagnostics only.
+
+Release wheels use PyO3 ``abi3-py310``.  Build one CPython 3.10 baseline wheel
+per platform and test that same artifact on every supported Python version.
+The artifact-level check is::
+
+    python dev/check_wheel_artifact.py wheelhouse/kwimage_ext*.whl

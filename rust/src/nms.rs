@@ -91,7 +91,7 @@ pub fn soft_nms<'py>(
     sigma: f32,
     bias: f32,
     method: u32,
-) -> PyResult<Bound<'py, PyArray1<usize>>> {
+) -> PyResult<Bound<'py, PyArray1<isize>>> {
     let mut boxes = unsafe { ltrb.as_array_mut() };
     let mut score_view = unsafe { scores.as_array_mut() };
     check_ltrb_shape(boxes.shape())?;
@@ -102,7 +102,7 @@ pub fn soft_nms<'py>(
     }
 
     let mut active_n = boxes.nrows();
-    let mut inds: Vec<usize> = (0..active_n).collect();
+    let mut inds: Vec<isize> = (0..active_n).map(|idx| idx as isize).collect();
     let mut i = 0usize;
 
     while i < active_n {

@@ -82,20 +82,13 @@ min_python = "3.10"
 url = 'https://gitlab.kitware.com/computer-vision/kwimage_ext'
 
 [tool.cibuildwheel]
+# PyO3 is built with abi3-py310, so build one CPython 3.10 baseline wheel per
+# platform and exercise that same artifact on every supported Python >= 3.10.
 build = "cp310-*"
-#build-frontend = "build"
 skip = "pp* *-musllinux_*"
-# We need numpy i686 wheels to use auto
 archs = ["auto"]
-#archs = ["x86_64"]
-#archs = ["i686"]
 build-verbosity = 1
-container-engine = "podman"
-
 manylinux-x86_64-image = "manylinux2014"
-
-# test-requires = [ "-r requirements/tests.txt",]
-# test-command = "python {project}/run_tests.py"
 
 [tool.mypy]
 ignore_missing_imports = true

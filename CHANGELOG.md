@@ -10,6 +10,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 * Optimize the Rust RLE IoU kernel by precomputing per-instance bounding boxes and detection areas once per matrix call, matching the original COCO C kernel structure instead of recomputing geometry for every mask pair.
+* Add a strict Rust-vs-C/Cython CPU parity suite and make release CI gate on it.
+* Build one `cp310-abi3` Rust wheel per platform and smoke-test that same artifact across supported Python versions instead of rebuilding per Python minor.
+* Keep historical C/Cython extensions as development-only `*_legacy` reference modules rather than shipping both binary stacks.
+
+### Fixed
+* Preserve the historical `numpy.intp` return dtype for Soft-NMS indices in the Rust backend.
+* Keep Soft-NMS's Rust-side pruning of disjoint boxes whose scores are already below threshold; the legacy Cython implementation only checked the threshold inside its overlap branch.
 
 ## Version 0.3.2 - Unreleased
 
