@@ -41,7 +41,7 @@ echo "$BUILD_RC" > "$OUT/build.returncode"
 
 if [ "$BUILD_RC" -eq 0 ]; then
     KWIMAGE_EXT_FORCE_RUST=1 python -m pytest -q \
-        tests/test_rust_backend.py tests/test_rust_shims.py tests/test_rust_mask_and_softnms.py \
+        tests/test_rust_backend.py tests/test_rust_shims.py tests/test_rust_mask_and_softnms.py tests/test_rust_assignment.py \
         > "$OUT/tests.log" 2>&1
     TEST_RC=$?
 else
@@ -84,6 +84,12 @@ try:
     print('nms_backend=', cpu_nms.backend_metadata())
 except Exception as ex:
     print('nms import failed:', repr(ex))
+try:
+    from kwimage_ext.algo import assignment
+    print('assignment_api=', assignment.__file__)
+    print('assignment_backend=', assignment.backend_metadata())
+except Exception as ex:
+    print('assignment import failed:', repr(ex))
 PY
 
 python -m pip freeze > "$OUT/pip_freeze.txt" 2>&1 || true

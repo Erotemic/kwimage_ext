@@ -85,6 +85,18 @@ implements every symbol required by a particular shim.  Set
 through to a legacy extension.  ``KWIMAGE_EXT_FORCE_LEGACY=1`` is intended for
 maintainer diagnostics only.
 
+The Rust module also exposes narrow ``coco-assignment`` capabilities through
+``kwimage_ext.algo.assignment``. ``coco_greedy_match`` batches IoU thresholds;
+``coco_greedy_match_grid`` additionally batches independent area/ignore slices
+so downstream evaluators can cross the Python/Rust boundary once per image.
+Both accept an already-built CSR sparse candidate graph plus stable prediction
+order / truth flags. Geometry and metric policy remain outside these kernels;
+downstream kwcoco retains Python reference implementations and fallbacks.
+Direct kernel parity and timing can be checked with::
+
+    KWIMAGE_EXT_FORCE_RUST=1 python -m pytest -q tests/test_rust_assignment.py
+    python dev/bench_assignment.py --n-pred=400 --n-true=400 --candidates=40
+
 Release wheels use PyO3 ``abi3-py310``.  Build one CPython 3.10 baseline wheel
 per platform and test that same artifact on every supported Python version.
 The artifact-level check is::

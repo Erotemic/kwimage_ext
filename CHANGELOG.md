@@ -7,6 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## Version 0.3.2 - Unreleased
 
 ### Added
+* Add an area-by-threshold Rust COCO greedy-assignment grid kernel so candidate geometry and prediction order cross PyO3 once per image instead of once per area range.
+* Add a batched Rust COCO-style greedy assignment kernel over sparse CSR candidate graphs, with crowd reuse, annotation-ignore fallback, threshold-boundary control, and direct randomized Python-reference parity tests.
+* Add a direct assignment microbenchmark for measuring PyO3 kernel speed independently from detector geometry and COCO accumulation.
 * Add direct Rust-vs-pycocotools parity coverage for fractional polygon rasterization, multi-polygon union, bbox rasterization, RLE bytes, decoded masks, areas, and derived boxes.
 * Add a strict Rust-vs-C/Cython CPU parity suite and make release CI gate on it.
 

@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 
+mod assignment;
 mod boxes;
 mod mask;
 mod nms;
@@ -12,6 +13,8 @@ fn version() -> &'static str {
 #[pyfunction]
 fn capabilities() -> Vec<&'static str> {
     vec![
+        "coco-assignment",
+        "coco-assignment-grid",
         "boxes",
         "mask-rle",
         "mask-iou",
@@ -24,6 +27,9 @@ fn capabilities() -> Vec<&'static str> {
 fn _rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(capabilities, m)?)?;
+
+    m.add_function(wrap_pyfunction!(assignment::coco_greedy_match, m)?)?;
+    m.add_function(wrap_pyfunction!(assignment::coco_greedy_match_grid, m)?)?;
 
     m.add_function(wrap_pyfunction!(boxes::bbox_ious_c, m)?)?;
     m.add_function(wrap_pyfunction!(boxes::bbox_overlaps, m)?)?;
