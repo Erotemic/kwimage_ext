@@ -4,7 +4,10 @@ We are currently working on porting this changelog to the specifications in
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Version 0.3.2 - Unreleased
+## Version 0.3.3 - Unreleased
+
+
+## Version 0.3.2 - Released 2026-09-20
 
 ### Added
 * Add an installed-release audit that requires all production Rust capabilities, including the COCO assignment grid kernel, checks grid-vs-repeated assignment parity, and emits machine-readable release metadata; include it in the Rust validation bundle.
