@@ -64,14 +64,11 @@ def validate_wheel(wheel: Path, benchmark: bool = False) -> dict:
             audit_cmd.append('--benchmark')
 
         env = os.environ.copy()
-        # Put the isolated wheel first.  Dependencies such as NumPy may still
-        # come from the caller's environment, but kwimage_ext itself must come
-        # entirely from ``target`` and check_release_install enforces that.
-        old_pythonpath = env.get('PYTHONPATH')
-        env['PYTHONPATH'] = (
-            str(target) if not old_pythonpath
-            else str(target) + os.pathsep + old_pythonpath
-        )
+        # Do not inherit the caller's PYTHONPATH.  The exact wheel and its
+        # declared dependencies were installed into ``target`` above; the
+        # release audit must not gain modules from an editable checkout or
+        # another developer-controlled path.
+        env['PYTHONPATH'] = str(target)
         env['PYTHONNOUSERSITE'] = '1'
         env['KWIMAGE_EXT_FORCE_RUST'] = '1'
         audit = _run(

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -euo pipefail
+
 __doc__="
 Runs cibuildwheel to create linux binary wheels.
 
@@ -9,23 +11,30 @@ SeeAlso:
     pyproject.toml
 "
 
-if ! which docker ; then
+if ! command -v docker >/dev/null 2>&1 ; then
     echo "Missing requirement: docker. Please install docker before running build_wheels.sh"
     exit 1
 fi
-if ! which cibuildwheel ; then
+if ! command -v cibuildwheel >/dev/null 2>&1 ; then
     echo "The cibuildwheel module is not installed. Please pip install cibuildwheel before running build_wheels.sh"
     exit 1
 fi
 
-# The package uses PyO3 abi3-py310.  Always build from the CPython 3.10
-# baseline unless the caller explicitly overrides CIBW_BUILD.
-export CIBW_BUILD="${CIBW_BUILD:-cp310-*}"
-echo "CIBW_BUILD = $CIBW_BUILD"
+# Reusable/stable-ABI wheel selection is packaging policy.
+# Honor [tool.cibuildwheel].build unless the caller explicitly
+# supplied CIBW_BUILD in the environment.
+if [[ -n "${CIBW_BUILD:-}" ]]; then
+    echo "CIBW_BUILD override = $CIBW_BUILD"
+else
+    echo "CIBW_BUILD = <from pyproject.toml>"
+fi
 
-# Never let an older same-version wheel survive into release validation.
+# Recreate the output directory so stale wheels cannot satisfy
+# post-build validation or be mistaken for this build.
+rm -rf wheelhouse
 mkdir -p wheelhouse
-rm -f wheelhouse/kwimage_ext*.whl
 
-cibuildwheel --config-file pyproject.toml --platform linux --archs x86_64  #  kwimage_ext: +UNCOMMENT_IF(binpy)
+cibuildwheel --config-file pyproject.toml --platform linux --archs x86_64
+
+# Project-owned artifact validation.
 python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl

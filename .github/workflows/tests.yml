@@ -9,18 +9,15 @@ name: BinPyCI
 on:
   push:
     # Restricting push triggers to the default branch avoids running
-    # the whole pipeline twice (push + pull_request events) for every
-    # push to a PR branch. Feature branches are covered by the
-    # pull_request trigger; release branches and tags are handled by
-    # release.yml.
+    # validation twice (push + pull_request events) for every push to a PR
+    # branch. Feature branches are covered by pull_request; release refs are
+    # handled by release.yml.
     branches: [ main ]
   pull_request:
     branches: [ main ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Superseded runs on the same ref are cancelled; deploy-bearing refs
-  # never trigger this workflow (release.yml owns them).
   cancel-in-progress: true
 
 jobs:
@@ -429,22 +426,3 @@ jobs:
       with:
         file: ./coverage.xml
         token: ${{ secrets.CODECOV_TOKEN }}
-  check_backend_parity:
-    name: Rust vs legacy parity
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout source
-      uses: actions/checkout@v6.0.2
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v6.2.0
-      with:
-        python-version: '3.13'
-    - name: Rust vs legacy parity
-      shell: bash
-      env: {}
-      run: |-
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-        export PATH="$HOME/.cargo/bin:$PATH"
-        rustc --version
-        cargo --version
-        ./dev/check_backend_parity.sh

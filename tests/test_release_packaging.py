@@ -25,8 +25,11 @@ def test_pyproject_is_authoritative_release_metadata():
 def test_ci_uses_xcookie_native_reusable_wheel_contract():
     pyproject_text = (REPO_DPATH / 'pyproject.toml').read_text()
     github_text = (REPO_DPATH / '.github/workflows/tests.yml').read_text()
+    github_checks = (REPO_DPATH / '.github/workflows/checks.yml').read_text()
     github_release = (REPO_DPATH / '.github/workflows/release.yml').read_text()
-    gitlab_text = (REPO_DPATH / '.gitlab-ci.yml').read_text()
+    gitlab_root = (REPO_DPATH / '.gitlab-ci.yml').read_text()
+    gitlab_text = (REPO_DPATH / '.gitlab/ci/main.yml').read_text()
+    gitlab_checks = (REPO_DPATH / '.gitlab/ci/checks.yml').read_text()
 
     # Keep the release support range explicit so xcookie does not silently
     # extend CI onto the next prerelease interpreter.
@@ -36,6 +39,7 @@ def test_ci_uses_xcookie_native_reusable_wheel_contract():
     assert 'KWIMAGE_EXT_FORCE_RUST = "1"' in pyproject_text
     assert 'python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl' in pyproject_text
     assert './dev/check_backend_parity.sh' in pyproject_text
+    assert "python -m pip install -e '.[tests]'" in pyproject_text
 
     # Reusable ABI3 packaging means one build per platform, not one build per
     # Python minor. The same platform artifact is then exercised on 3.10-3.14.
@@ -54,7 +58,22 @@ def test_ci_uses_xcookie_native_reusable_wheel_contract():
         assert 'INSTALL_TARGET="${WHEEL_FPATH}' in text
         assert 'KWIMAGE_EXT_FORCE_RUST' in text
         assert 'validate_wheel_artifact.py' in text
-        assert 'check_backend_parity.sh' in text
+
+    # Project-owned source checks live in provider-specific generated check
+    # files. They must not be duplicated into the normal test or release jobs.
+    assert 'check_backend_parity.sh' not in github_text
+    assert 'check_backend_parity.sh' not in github_release
+    assert 'check_backend_parity.sh' in github_checks
+    assert "python -m pip install -e '.[tests]'" in github_checks
+    assert 'pull_request:' in github_checks
+
+    assert 'include:' in gitlab_root
+    assert '.gitlab/ci/main.yml' in gitlab_root
+    assert '.gitlab/ci/checks.yml' in gitlab_root
+    assert 'check/backend-parity' not in gitlab_text
+    assert 'check/backend-parity' in gitlab_checks
+    assert "python -m pip install -e '.[tests]'" in gitlab_checks
+    assert './dev/check_backend_parity.sh' in gitlab_checks
 
     # GitHub release publication is now a separate xcookie-owned workflow.
     assert 'test_deploy:' not in github_text
@@ -96,7 +115,9 @@ def test_release_validation_is_artifact_isolated():
     assert "PYTHONNOUSERSITE" in validator
     assert 'path.is_relative_to(root)' in audit
     assert 'artifact_isolated' in audit
-    assert 'rm -f wheelhouse/kwimage_ext*.whl' in build_script
-    assert 'CIBW_BUILD:-cp310-*' in build_script
+    assert 'rm -rf wheelhouse' in build_script
+    assert 'CIBW_BUILD = <from pyproject.toml>' in build_script
+    assert 'LOCAL_CP_VERSION=' not in build_script
+    assert 'validate_wheel_artifact.py' in build_script
     assert 'pip wheel --no-deps' in candidate_script
     assert 'validate_wheel_artifact.py' in candidate_script

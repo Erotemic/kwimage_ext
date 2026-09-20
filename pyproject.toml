@@ -106,7 +106,7 @@ KWIMAGE_EXT_FORCE_RUST = "1"
 [tool.xcookie.ci_source_checks.backend-parity]
 name = "Rust vs legacy parity"
 python_version = "3.13"
-setup_commands = ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal", "export PATH=\"$HOME/.cargo/bin:$PATH\"", "rustc --version", "cargo --version"]
+setup_commands = ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal", "export PATH=\"$HOME/.cargo/bin:$PATH\"", "rustc --version", "cargo --version", "python -m pip install -e '.[tests]'"]
 commands = ["./dev/check_backend_parity.sh"]
 [tool.cibuildwheel]
 # PyO3 is built with abi3-py310, so build one CPython 3.10 baseline wheel per
