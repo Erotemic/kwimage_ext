@@ -119,3 +119,54 @@ def test_rust_mask_iou_fragmented_matrix_parity_if_available():
     got = cython_mask.iou(ours, ours, crowd)
     want = pycoco.iou(theirs, theirs, crowd)
     assert np.array_equal(got, want)
+
+
+def test_rust_polygon_rasterization_matches_pycocotools_if_available():
+    pycoco = pytest.importorskip('pycocotools.mask')
+    from kwimage_ext.structs._mask_backend import cython_mask
+
+    h, w = 64, 80
+    polygons = [
+        [3.2, 4.7, 31.6, 6.1, 29.4, 28.8, 5.1, 30.2],
+        [18.25, 12.75, 55.4, 13.1, 61.8, 46.6, 20.2, 50.3],
+        [7.9, 40.2, 14.1, 35.6, 25.7, 42.8, 22.4, 57.1, 9.0, 55.0],
+    ]
+    ours = cython_mask.frPoly(polygons, h, w)
+    theirs = pycoco.frPyObjects(polygons, h, w)
+    assert [r['counts'] for r in ours] == [r['counts'] for r in theirs]
+    assert np.array_equal(cython_mask.decode(ours), pycoco.decode(theirs))
+    assert np.array_equal(cython_mask.area(ours), pycoco.area(theirs))
+    assert np.array_equal(cython_mask.toBbox(ours), pycoco.toBbox(theirs))
+
+
+def test_rust_polygon_merge_matches_pycocotools_if_available():
+    pycoco = pytest.importorskip('pycocotools.mask')
+    from kwimage_ext.structs._mask_backend import cython_mask
+
+    h, w = 48, 48
+    polygons = [
+        [2.2, 3.3, 23.8, 4.1, 20.2, 25.7, 4.0, 22.9],
+        [16.5, 14.2, 40.2, 15.8, 39.1, 39.4, 18.4, 37.6],
+    ]
+    ours_parts = cython_mask.frPoly(polygons, h, w)
+    their_parts = pycoco.frPyObjects(polygons, h, w)
+    ours = cython_mask.merge(ours_parts)
+    theirs = pycoco.merge(their_parts)
+    assert ours['counts'] == theirs['counts']
+    assert np.array_equal(cython_mask.decode([ours])[:, :, 0], pycoco.decode(theirs))
+
+
+def test_rust_bbox_rasterization_matches_pycocotools_if_available():
+    pycoco = pytest.importorskip('pycocotools.mask')
+    from kwimage_ext.structs._mask_backend import cython_mask
+
+    h, w = 64, 80
+    boxes = np.array([
+        [3.2, 4.7, 20.3, 15.8],
+        [12.0, 18.25, 31.4, 28.6],
+        [0.0, 0.0, 8.5, 9.5],
+    ], dtype=np.float64)
+    ours = cython_mask.frBbox(boxes, h, w)
+    theirs = pycoco.frPyObjects(boxes, h, w)
+    assert [r['counts'] for r in ours] == [r['counts'] for r in theirs]
+    assert np.array_equal(cython_mask.decode(ours), pycoco.decode(theirs))
