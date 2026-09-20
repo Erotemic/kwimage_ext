@@ -47,7 +47,7 @@ jobs:
       shell: bash
       run: ls -la wheelhouse
     - name: Set up Python 3.14 for wheel validation
-      uses: actions/setup-python@v6.2.0
+      uses: actions/setup-python@v7.0.0
       with:
         python-version: '3.14'
     - name: Validate built wheel artifacts
