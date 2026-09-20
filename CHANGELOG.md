@@ -16,7 +16,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 * Preserve the historical `numpy.intp` return dtype for Soft-NMS indices in the Rust backend.
+* Match historical CPU-NMS equal-score behavior by preferring the earlier input index deterministically.
+* Match the legacy Soft-NMS in-place mutation semantics when pruning overlapping boxes, including the observable inactive array tail.
 * Keep Soft-NMS's Rust-side pruning of disjoint boxes whose scores are already below threshold; the legacy Cython implementation only checked the threshold inside its overlap branch.
+* Keep Rust `bbox_similarities` on the intended floating-point formula instead of reproducing the legacy Cython integer-`abs` truncation defect; direct parity tests document this intentional difference.
 
 ## Version 0.3.2 - Unreleased
 

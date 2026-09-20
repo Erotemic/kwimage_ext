@@ -34,7 +34,10 @@ pub fn cpu_nms(
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by(|&a, &b| {
         scores[b].partial_cmp(&scores[a]).unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.cmp(&a))
+            // Match the historical CPU-NMS behavior for equal scores on the
+            // supported NumPy stack: earlier input indices win ties.  Make the
+            // rule explicit here instead of inheriting an unstable sort detail.
+            .then_with(|| a.cmp(&b))
     });
     let mut suppressed = vec![false; n];
     let mut keep = Vec::with_capacity(n);
@@ -161,16 +164,22 @@ pub fn soft_nms<'py>(
             if score_view[pos] < thresh {
                 let last = active_n - 1;
                 if pos != last {
+                    // The historical Cython implementation *copies* the last
+                    // active entry over the discarded slot rather than swapping
+                    // it.  The inactive tail is externally observable because
+                    // ltrb/scores are mutated in place, so preserve that exact
+                    // mutation behavior for compatibility.
                     for c in 0..4 {
-                        let tmp = boxes[(pos, c)];
-                        boxes[(pos, c)] = boxes[(last, c)];
-                        boxes[(last, c)] = tmp;
+                        let last_value = boxes[(last, c)];
+                        boxes[(pos, c)] = last_value;
                     }
-                    score_view.swap(pos, last);
-                    inds.swap(pos, last);
+                    let last_score = score_view[last];
+                    score_view[pos] = last_score;
+                    let last_index = inds[last];
+                    inds[pos] = last_index;
                 }
                 active_n -= 1;
-                // Inspect the item swapped into `pos` before advancing.
+                // Inspect the item copied into `pos` before advancing.
                 continue;
             }
             pos += 1;

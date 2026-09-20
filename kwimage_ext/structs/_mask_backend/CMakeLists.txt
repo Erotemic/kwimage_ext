@@ -1,12 +1,21 @@
-
 option(BUILD_MASK_CYTHON "Enable cython masks" TRUE)
 if (BUILD_MASK_CYTHON)
 
   set(cython_source "cython_mask.pyx")
   set(module_name "cython_mask_legacy")
 
+  # Cython derives the extension initializer (PyInit_*) from the .pyx
+  # basename.  Build the historical source through a build-tree copy whose
+  # basename matches the intentionally non-colliding reference module name.
+  set(cython_legacy_source "${CMAKE_CURRENT_BINARY_DIR}/${module_name}.pyx")
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/${cython_source}"
+    "${cython_legacy_source}"
+    COPYONLY
+  )
+
   # Translate Cython into C/C++
-  add_cython_target(${module_name} "${cython_source}" C OUTPUT_VAR sources)
+  add_cython_target(${module_name} "${cython_legacy_source}" C OUTPUT_VAR sources)
 
   # Add other C sources
   list(APPEND sources "maskApi.c" "maskApi.h")

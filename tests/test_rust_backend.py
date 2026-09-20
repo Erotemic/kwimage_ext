@@ -30,6 +30,19 @@ def test_box_iou_known_values():
     assert np.allclose(got[:, 0], [1.0, 0.25])
 
 
+def test_bbox_similarities_known_formula():
+    boxes = np.array([[0, 0, 9, 9]], dtype=np.float32)
+    query = np.array([
+        [9, 9, 12, 12],
+        [10, 10, 10, 10],
+    ], dtype=np.float32)
+    got = rust.bbox_similarities(boxes, query)
+    # These values use floating-point absolute values.  The legacy Cython
+    # implementation accidentally truncated fractional distances via C abs().
+    want = np.array([[0.4473846, 0.018900394]], dtype=np.float32)
+    np.testing.assert_allclose(got, want, rtol=1e-6, atol=1e-7)
+
+
 def test_cpu_nms_known_case():
     ltrb = np.array([
         [0, 0, 10, 10],
@@ -40,6 +53,17 @@ def test_cpu_nms_known_case():
     keep = rust.cpu_nms(ltrb, scores, 0.5, bias=0.0)
     assert keep == [1, 2]
 
+
+
+def test_cpu_nms_equal_scores_prefer_earlier_index():
+    ltrb = np.array([
+        [0, 0, 10, 10],
+        [0, 0, 10, 10],
+        [50, 50, 60, 60],
+    ], dtype=np.float32)
+    scores = np.array([0.9, 0.9, 0.8], dtype=np.float32)
+    keep = rust.cpu_nms(ltrb, scores, 0.5, bias=0.0)
+    assert keep == [0, 2]
 
 
 def test_soft_nms_known_case():

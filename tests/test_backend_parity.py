@@ -89,7 +89,6 @@ def _box_cases():
     'bbox_ious_c',
     'bbox_overlaps',
     'bbox_intersections',
-    'bbox_similarities',
 ])
 def test_boxes_pairwise_parity(backends, name):
     rust = backends['rust']
@@ -106,6 +105,63 @@ def test_boxes_pairwise_parity(backends, name):
                 got = getattr(rust, name)(boxes, query)
                 want = getattr(legacy, name)(boxes, query)
                 _assert_array_parity(got, want)
+
+
+def _bbox_similarities_reference(boxes, query_boxes):
+    """Independent floating-point reference for the documented formula."""
+    boxes = np.asarray(boxes, dtype=np.float32)
+    query_boxes = np.asarray(query_boxes, dtype=np.float32)
+    out = np.zeros((len(boxes), len(query_boxes)), dtype=np.float32)
+    for n, box in enumerate(boxes):
+        cx1 = np.float32((box[0] + box[2]) * np.float32(0.5))
+        cy1 = np.float32((box[1] + box[3]) * np.float32(0.5))
+        w1 = np.float32(box[2] - box[0] + np.float32(1.0))
+        h1 = np.float32(box[3] - box[1] + np.float32(1.0))
+        for k, query in enumerate(query_boxes):
+            cx2 = np.float32((query[0] + query[2]) * np.float32(0.5))
+            cy2 = np.float32((query[1] + query[3]) * np.float32(0.5))
+            w2 = np.float32(query[2] - query[0] + np.float32(1.0))
+            h2 = np.float32(query[3] - query[1] + np.float32(1.0))
+            loc_dist = np.float32(
+                np.abs(np.float32(cx1 - cx2)) / np.float32(w1 + w2) +
+                np.abs(np.float32(cy1 - cy2)) / np.float32(h1 + h2)
+            )
+            shape_dist = np.float32(np.abs(
+                np.float32(w2 * h2) / np.float32(w1 * h1) - np.float32(1.0)
+            ))
+            out[n, k] = np.float32(
+                -np.log(np.float32(loc_dist + np.float32(0.001))) -
+                np.float32(shape_dist * shape_dist) + np.float32(1.0)
+            )
+    return out
+
+
+def test_bbox_similarities_rust_uses_float_abs_not_legacy_integer_abs(backends):
+    """Keep the Rust correction for a historical Cython ``abs`` defect.
+
+    The legacy Cython source calls C ``abs`` on floating-point distances.  On
+    the reference build that truncates fractional values to integers before
+    taking the absolute value.  Rust implements the intended floating-point
+    formula instead; this is an intentional semantic correction, not a parity
+    regression.
+    """
+    rust = backends['rust']
+    legacy = backends['boxes']
+    boxes = np.array([[0, 0, 9, 9]], dtype=np.float32)
+    query = np.array([
+        [0, 0, 9, 9],
+        [9, 9, 12, 12],
+        [10, 10, 10, 10],
+        [-5, -7, 3, 2],
+        [4, 5, 3, 9],
+    ], dtype=np.float32)
+
+    got = rust.bbox_similarities(boxes, query)
+    reference = _bbox_similarities_reference(boxes, query)
+    historical = legacy.bbox_similarities(boxes, query)
+
+    _assert_array_parity(got, reference)
+    assert not np.allclose(historical[:, 1:], reference[:, 1:])
 
 
 def test_anchor_intersections_parity(backends):
