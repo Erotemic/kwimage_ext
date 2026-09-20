@@ -32,6 +32,7 @@ REQUIRED_PYTHON_FILES = {
     'kwimage_ext/structs/_mask_backend/_api.py',
     'kwimage_ext/algo/_nms_backend/_cpu_nms_api.py',
     'kwimage_ext/algo/_nms_backend/_cpu_soft_nms_api.py',
+    'kwimage_ext/algo/assignment.py',
 }
 
 

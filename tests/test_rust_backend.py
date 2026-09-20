@@ -9,7 +9,10 @@ rust = pytest.importorskip('kwimage_ext._rust')
 
 def test_rust_capabilities_are_complete_for_shims():
     caps = set(rust.capabilities())
-    assert {'boxes', 'mask-rle', 'mask-iou', 'cpu-nms', 'soft-nms'} <= caps
+    assert {
+        'boxes', 'mask-rle', 'mask-iou', 'cpu-nms', 'soft-nms',
+        'coco-assignment', 'coco-assignment-grid',
+    } <= caps
 
 
 def test_public_shims_are_actually_using_rust_when_forced():
@@ -210,3 +213,12 @@ def test_rust_bbox_rasterization_matches_pycocotools_if_available():
     theirs = pycoco.frPyObjects(boxes, h, w)
     assert [r['counts'] for r in ours] == [r['counts'] for r in theirs]
     assert np.array_equal(cython_mask.decode(ours), pycoco.decode(theirs))
+
+
+def test_release_version_metadata_is_consistent():
+    import importlib.metadata
+    import kwimage_ext
+
+    dist_version = importlib.metadata.version('kwimage_ext')
+    assert dist_version == kwimage_ext.__version__
+    assert dist_version == rust.version()
