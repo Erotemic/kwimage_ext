@@ -37,7 +37,7 @@ if (BUILD_CPU_NMS)
 
   #set(cython_source "cpu_soft_nms.pyx")
   #set(module_name "cpu_soft_nms.pyx")
-  cpu_cython_module("cpu_soft_nms.pyx" "cpu_soft_nms")
+  cpu_cython_module("cpu_soft_nms.pyx" "cpu_soft_nms_legacy")
 
 endif()
 

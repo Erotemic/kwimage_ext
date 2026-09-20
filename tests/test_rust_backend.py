@@ -9,7 +9,7 @@ rust = pytest.importorskip('kwimage_ext._rust')
 
 def test_rust_capabilities_are_complete_for_shims():
     caps = set(rust.capabilities())
-    assert {'boxes', 'mask-rle', 'mask-iou', 'cpu-nms'} <= caps
+    assert {'boxes', 'mask-rle', 'mask-iou', 'cpu-nms', 'soft-nms'} <= caps
 
 
 def test_public_shims_are_actually_using_rust_when_forced():
@@ -40,6 +40,22 @@ def test_cpu_nms_known_case():
     keep = rust.cpu_nms(ltrb, scores, 0.5, bias=0.0)
     assert keep == [1, 2]
 
+
+
+def test_soft_nms_known_case():
+    from kwimage_ext.algo._nms_backend import cpu_soft_nms
+
+    ltrb = np.array([
+        [0, 0, 10, 10],
+        [0, 0, 10, 10],
+        [50, 50, 60, 60],
+    ], dtype=np.float32)
+    scores = np.array([0.9, 0.8, 0.7], dtype=np.float32)
+    keep = cpu_soft_nms.soft_nms(ltrb, scores)
+    assert isinstance(keep, np.ndarray)
+    assert keep.ndim == 1
+    assert keep[0] == 0
+    assert 2 in keep
 
 def test_mask_roundtrip_and_area():
     from kwimage_ext.structs._mask_backend import cython_mask

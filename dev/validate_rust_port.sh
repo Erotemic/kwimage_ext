@@ -41,7 +41,7 @@ echo "$BUILD_RC" > "$OUT/build.returncode"
 
 if [ "$BUILD_RC" -eq 0 ]; then
     KWIMAGE_EXT_FORCE_RUST=1 python -m pytest -q \
-        tests/test_rust_backend.py tests/test_rust_shims.py \
+        tests/test_rust_backend.py tests/test_rust_shims.py tests/test_rust_mask_and_softnms.py \
         > "$OUT/tests.log" 2>&1
     TEST_RC=$?
 else

@@ -1,4 +1,3 @@
-from kwimage_ext._rust_dispatch import import_backend
-
-_backend = import_backend("kwimage_ext._rust", "kwimage_ext.algo._nms_backend.cpu_soft_nms_legacy")
-soft_nms = _backend.soft_nms
+"""Historical import name; implementation lives in :mod:`._cpu_soft_nms_api`."""
+from ._cpu_soft_nms_api import *  # noqa: F401,F403
+from ._cpu_soft_nms_api import backend_metadata  # noqa: F401
