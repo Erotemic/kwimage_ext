@@ -7,6 +7,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## Version 0.3.2 - Unreleased
 
 ### Added
+* Add an installed-release audit that requires all production Rust capabilities, including the COCO assignment grid kernel, checks grid-vs-repeated assignment parity, and emits machine-readable release metadata; include it in the Rust validation bundle.
+* Harden wheel artifact checks so release wheels must contain the public COCO assignment shim used by downstream kwcoco acceleration.
 * Add an area-by-threshold Rust COCO greedy-assignment grid kernel so candidate geometry and prediction order cross PyO3 once per image instead of once per area range.
 * Add a batched Rust COCO-style greedy assignment kernel over sparse CSR candidate graphs, with crowd reuse, annotation-ignore fallback, threshold-boundary control, and direct randomized Python-reference parity tests.
 * Add a direct assignment microbenchmark for measuring PyO3 kernel speed independently from detector geometry and COCO accumulation.
@@ -26,6 +28,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 * Rename future Cython parity builds to explicit `*_legacy` extension names, make backend forcing dynamic/testable, and make Rust validation fail when parity tests fail rather than reporting build success alone.
 
 ### Fixed
+* Make release validation exercise a freshly built, non-editable wheel from an isolated install root instead of allowing the source checkout/editable `.pth` to satisfy capability checks; explicitly package the full `kwimage_ext` Python package with maturin and clean stale wheelhouse artifacts before local builds.
 * Preserve the historical `numpy.intp` return dtype for Soft-NMS indices in the Rust backend.
 * Match historical CPU-NMS equal-score behavior by preferring the earlier input index deterministically.
 * Match the legacy Soft-NMS in-place mutation semantics when pruning overlapping boxes, including the observable inactive array tail.

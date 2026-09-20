@@ -52,7 +52,7 @@ jobs:
         python-version: '3.14'
     - name: Validate built wheel artifacts
       shell: bash
-      run: python dev/check_wheel_artifact.py wheelhouse/kwimage_ext*.whl
+      run: python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl
     - uses: actions/upload-artifact@v6.0.0
       name: Upload wheels artifact
       with:

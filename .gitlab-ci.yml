@@ -88,7 +88,7 @@ stages:
   - cibuildwheel --config-file pyproject.toml --output-dir wheelhouse --platform linux
   - ls $CIBW_OCI_ROOT
   - ls wheelhouse
-  - python dev/check_wheel_artifact.py wheelhouse/kwimage_ext*.whl
+  - python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl
   artifacts:
     paths:
     - wheelhouse/

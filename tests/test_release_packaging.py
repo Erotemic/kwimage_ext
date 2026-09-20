@@ -34,7 +34,7 @@ def test_ci_uses_xcookie_native_reusable_wheel_contract():
     assert 'ci_reusable_wheels = true' in pyproject_text
     assert 'github_url = "https://github.com/Erotemic/kwimage_ext"' in pyproject_text
     assert 'KWIMAGE_EXT_FORCE_RUST = "1"' in pyproject_text
-    assert 'python dev/check_wheel_artifact.py wheelhouse/kwimage_ext*.whl' in pyproject_text
+    assert 'python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl' in pyproject_text
     assert './dev/check_backend_parity.sh' in pyproject_text
 
     # Reusable ABI3 packaging means one build per platform, not one build per
@@ -53,7 +53,7 @@ def test_ci_uses_xcookie_native_reusable_wheel_contract():
         assert 'WHEEL_FPATH' in text
         assert 'INSTALL_TARGET="${WHEEL_FPATH}' in text
         assert 'KWIMAGE_EXT_FORCE_RUST' in text
-        assert 'check_wheel_artifact.py' in text
+        assert 'validate_wheel_artifact.py' in text
         assert 'check_backend_parity.sh' in text
 
     # GitHub release publication is now a separate xcookie-owned workflow.
@@ -80,4 +80,23 @@ def test_release_version_and_rust_manifest_agree():
 
     assert project_version == init_version == cargo_version
     assert 'manifest-path = "rust/Cargo.toml"' in pyproject_text
+    assert 'python-packages = ["kwimage_ext"]' in pyproject_text
     assert 'features = ["abi3-py310", "extension-module"]' in cargo_text
+
+
+
+def test_release_validation_is_artifact_isolated():
+    validator = (REPO_DPATH / 'dev/validate_wheel_artifact.py').read_text()
+    audit = (REPO_DPATH / 'dev/check_release_install.py').read_text()
+    build_script = (REPO_DPATH / 'build_wheels.sh').read_text()
+    candidate_script = (REPO_DPATH / 'dev/build_release_candidate.sh').read_text()
+
+    assert "'--target'" in validator
+    assert "'--require-install-root'" in validator
+    assert "PYTHONNOUSERSITE" in validator
+    assert 'path.is_relative_to(root)' in audit
+    assert 'artifact_isolated' in audit
+    assert 'rm -f wheelhouse/kwimage_ext*.whl' in build_script
+    assert 'CIBW_BUILD:-cp310-*' in build_script
+    assert 'pip wheel --no-deps' in candidate_script
+    assert 'validate_wheel_artifact.py' in candidate_script

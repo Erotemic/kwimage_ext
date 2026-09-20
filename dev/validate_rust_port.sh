@@ -92,16 +92,45 @@ except Exception as ex:
     print('assignment import failed:', repr(ex))
 PY
 
+if [ "$BUILD_RC" -eq 0 ]; then
+    mkdir -p "$OUT/wheelhouse"
+    python -m pip wheel --no-deps --wheel-dir "$OUT/wheelhouse" . \
+        > "$OUT/wheel_build.log" 2>&1
+    WHEEL_BUILD_RC=$?
+else
+    WHEEL_BUILD_RC=99
+    echo "wheel build skipped because editable build failed" > "$OUT/wheel_build.log"
+fi
+echo "$WHEEL_BUILD_RC" > "$OUT/wheel_build.returncode"
+
+if [ "$WHEEL_BUILD_RC" -eq 0 ]; then
+    ls -lh "$OUT"/wheelhouse/kwimage_ext*.whl > "$OUT/wheel_inventory.txt" 2>&1
+    python dev/validate_wheel_artifact.py --benchmark \
+        --output "$OUT/wheel_validation.json" \
+        "$OUT"/wheelhouse/kwimage_ext*.whl \
+        > "$OUT/wheel_validation.log" 2>&1
+    RELEASE_AUDIT_RC=$?
+else
+    RELEASE_AUDIT_RC=99
+    echo "wheel validation skipped because wheel build failed" > "$OUT/wheel_validation.log"
+    : > "$OUT/wheel_validation.json"
+    : > "$OUT/wheel_inventory.txt"
+fi
+echo "$RELEASE_AUDIT_RC" > "$OUT/release_install.returncode"
+
 python -m pip freeze > "$OUT/pip_freeze.txt" 2>&1 || true
 
 tar -czf "$OUT/kwimage_ext_rust_validation.tar.gz" \
     -C "$OUT" \
-    environment.txt cargo_metadata.json cargo_metadata.stderr cargo_metadata.returncode build.log build.returncode tests.log tests.returncode imports.txt pip_freeze.txt
+    environment.txt cargo_metadata.json cargo_metadata.stderr cargo_metadata.returncode build.log build.returncode tests.log tests.returncode imports.txt wheel_build.log wheel_build.returncode wheel_inventory.txt wheel_validation.json wheel_validation.log release_install.returncode pip_freeze.txt
 
-echo "build_rc=$BUILD_RC test_rc=$TEST_RC"
+echo "build_rc=$BUILD_RC test_rc=$TEST_RC wheel_build_rc=$WHEEL_BUILD_RC release_audit_rc=$RELEASE_AUDIT_RC"
 echo "upload: $OUT/kwimage_ext_rust_validation.tar.gz"
 
 if [ "$BUILD_RC" -ne 0 ]; then
     exit "$BUILD_RC"
 fi
-exit "$TEST_RC"
+if [ "$TEST_RC" -ne 0 ]; then
+    exit "$TEST_RC"
+fi
+exit "$RELEASE_AUDIT_RC"

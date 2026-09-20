@@ -102,3 +102,27 @@ per platform and test that same artifact on every supported Python version.
 The artifact-level check is::
 
     python dev/check_wheel_artifact.py wheelhouse/kwimage_ext*.whl
+
+Release evidence audit
+----------------------
+
+For release candidates, validate the *built wheel*, not an editable checkout.
+The artifact validator first checks the archive structure, then installs the
+wheel into a temporary target directory and requires every imported
+``kwimage_ext`` module (including ``algo.assignment`` and ``_rust``) to resolve
+from that isolated target.  This prevents source-tree imports or stale editable
+``.pth`` files from hiding an incomplete release artifact::
+
+    python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl
+
+For a local release candidate, the deterministic preflight is::
+
+    ./dev/build_release_candidate.sh _release_candidate
+
+That command always builds a fresh non-editable wheel, validates the isolated
+install/capability surface, runs the release-packaging guards, records SHA256
+hashes and wheel contents, and emits an uploadable evidence bundle.
+``dev/validate_rust_port.sh`` performs the same non-editable wheel audit in
+addition to the editable development tests.  End-to-end COCO metric speed /
+memory comparisons remain owned by kwcoco because only the full evaluator can
+make a meaningful comparison against ``pycocotools.COCOeval``.

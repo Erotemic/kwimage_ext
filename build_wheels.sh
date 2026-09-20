@@ -18,13 +18,14 @@ if ! which cibuildwheel ; then
     exit 1
 fi
 
-LOCAL_CP_VERSION=$(python3 -c "import sys; print('cp' + ''.join(list(map(str, sys.version_info[0:2]))))")
-echo "LOCAL_CP_VERSION = $LOCAL_CP_VERSION"
+# The package uses PyO3 abi3-py310.  Always build from the CPython 3.10
+# baseline unless the caller explicitly overrides CIBW_BUILD.
+export CIBW_BUILD="${CIBW_BUILD:-cp310-*}"
+echo "CIBW_BUILD = $CIBW_BUILD"
 
-# Build for only the current version of Python
-export CIBW_BUILD="${LOCAL_CP_VERSION}-*"
+# Never let an older same-version wheel survive into release validation.
+mkdir -p wheelhouse
+rm -f wheelhouse/kwimage_ext*.whl
 
-
-#pip wheel -w wheelhouse .
-# python -m build --wheel -o wheelhouse  #  kwimage_ext: +COMMENT_IF(binpy)
 cibuildwheel --config-file pyproject.toml --platform linux --archs x86_64  #  kwimage_ext: +UNCOMMENT_IF(binpy)
+python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl

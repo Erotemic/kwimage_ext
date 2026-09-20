@@ -76,6 +76,7 @@ Documentation = "https://kwimage_ext.readthedocs.io"
 [tool.maturin]
 manifest-path = "rust/Cargo.toml"
 python-source = "."
+python-packages = ["kwimage_ext"]
 module-name = "kwimage_ext._rust"
 bindings = "pyo3"
 features = ["pyo3/extension-module"]
@@ -97,7 +98,7 @@ github_url = "https://github.com/Erotemic/kwimage_ext"
 max_python = "3.14"
 ci_cpython_versions = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 ci_reusable_wheels = true
-ci_wheel_build_post_commands = ["python dev/check_wheel_artifact.py wheelhouse/kwimage_ext*.whl"]
+ci_wheel_build_post_commands = ["python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl"]
 
 [tool.xcookie.test_env]
 KWIMAGE_EXT_FORCE_RUST = "1"
