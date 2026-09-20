@@ -1,26 +1,89 @@
 [build-system]
-# Build with an old numpy for forwards compat
-# reason: https://stackoverflow.com/questions/66060487/valueerror-numpy-ndarray-size-changed-may-indicate-binary-incompatibility-exp
-requires = [
-"setuptools>=41.0.1",
-"wheel",
-"scikit-build>=0.9.0", 
-"numpy>=2.1.0  ; python_version < '4.0'  and python_version >= '3.13'",    # Python 3.13+
-"numpy>=1.26.0 ; python_version < '3.13' and python_version >= '3.12'",    # Python 3.12
-"numpy>=1.23.2 ; python_version < '3.12' and python_version >= '3.11'",    # Python 3.11
-"numpy>=1.21.6 ; python_version < '3.11' and python_version >= '3.10'",
-"numpy>=1.19.3 ; python_version < '3.10' and python_version >= '3.9'", 
-"ninja>=1.10.0",
-"cmake>=3.15.0",
-"cython",
-"cffi"
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "kwimage_ext"
+version = "0.3.2"
+description = "Binary acceleration extensions for kwimage"
+readme = "README.rst"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+  { name = "Kitware Inc." },
+  { name = "Jon Crall", email = "jon.crall@kitware.com" },
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Utilities",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "ubelt>=1.3.3",
+  "numpy>=2.3.2; python_version >= '3.14'",
+  "numpy>=2.1.0; python_version >= '3.13' and python_version < '3.14'",
+  "numpy>=1.26.0; python_version >= '3.12' and python_version < '3.13'",
+  "numpy>=1.23.2; python_version >= '3.11' and python_version < '3.12'",
+  "numpy>=1.21.6; python_version >= '3.10' and python_version < '3.11'",
 ]
 
-#requires = ["maturin>=1.7,<2.0"]
-#build-backend = "maturin"
+[project.optional-dependencies]
+tests = [
+  "xdoctest>=1.1.5",
+  "pytest>=6.2.5",
+  "pytest-cov>=3.0.0",
+  "coverage>=6.1.1",
+]
+optional = ["torch>=1.11.0"]
+all = [
+  "xdoctest>=1.1.5",
+  "pytest>=6.2.5",
+  "pytest-cov>=3.0.0",
+  "coverage>=6.1.1",
+  "torch>=1.11.0",
+]
+
+# Keep generated CI extra names valid during the Rust transition.
+# These are conservative aliases; xcookie can regenerate exact pins later.
+runtime-strict = []
+tests-strict = [
+  "xdoctest>=1.1.5",
+  "pytest>=6.2.5",
+  "pytest-cov>=3.0.0",
+  "coverage>=6.1.1",
+]
+optional-strict = ["torch>=1.11.0"]
+all-strict = [
+  "xdoctest>=1.1.5",
+  "pytest>=6.2.5",
+  "pytest-cov>=3.0.0",
+  "coverage>=6.1.1",
+  "torch>=1.11.0",
+]
+
+[project.urls]
+Homepage = "https://gitlab.kitware.com/computer-vision/kwimage_ext"
+Documentation = "https://kwimage_ext.readthedocs.io"
+
+[tool.maturin]
+manifest-path = "rust/Cargo.toml"
+python-source = "."
+python-packages = ["kwimage_ext"]
+module-name = "kwimage_ext._rust"
+bindings = "pyo3"
+features = ["pyo3/extension-module"]
+strip = false
 
 [tool.xcookie]
-tags = [ "kitware", "gitlab", "binpy", 'nosrcdist']
+tags = ["kitware", "gitlab", "github", "binpy", "nosrcdist"]
 author = "Kitware Inc., Jon Crall"
 os = [ "all", "win", "osx", "linux",]
 rel_mod_parent_dpath = "."
@@ -31,22 +94,28 @@ repo_name = "kwimage_ext"
 dev_status = "alpha"
 min_python = "3.10"
 url = 'https://gitlab.kitware.com/computer-vision/kwimage_ext'
+github_url = "https://github.com/Erotemic/kwimage_ext"
+max_python = "3.14"
+ci_cpython_versions = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+ci_reusable_wheels = true
+ci_wheel_build_post_commands = ["python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl"]
 
+[tool.xcookie.test_env]
+KWIMAGE_EXT_FORCE_RUST = "1"
+
+[tool.xcookie.ci_source_checks.backend-parity]
+name = "Rust vs legacy parity"
+python_version = "3.13"
+setup_commands = ["curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal", "export PATH=\"$HOME/.cargo/bin:$PATH\"", "rustc --version", "cargo --version", "python -m pip install -e '.[tests]'"]
+commands = ["./dev/check_backend_parity.sh"]
 [tool.cibuildwheel]
-build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
-#build-frontend = "build"
+# PyO3 is built with abi3-py310, so build one CPython 3.10 baseline wheel per
+# platform and exercise that same artifact on every supported Python >= 3.10.
+build = "cp310-*"
 skip = "pp* *-musllinux_*"
-# We need numpy i686 wheels to use auto
 archs = ["auto"]
-#archs = ["x86_64"]
-#archs = ["i686"]
 build-verbosity = 1
-container-engine = "podman"
-
 manylinux-x86_64-image = "manylinux2014"
-
-# test-requires = [ "-r requirements/tests.txt",]
-# test-command = "python {project}/run_tests.py"
 
 [tool.mypy]
 ignore_missing_imports = true
@@ -67,4 +136,5 @@ omit = [ "kwimage_ext/__main__.py", "*/setup.py",]
 #features = ["pyo3/extension-module"]
 
 [tool.cibuildwheel.linux]
-before-all = "yum install -y libffi-devel"
+before-all = "yum install -y curl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal"
+environment = { PATH = "$HOME/.cargo/bin:$PATH" }

@@ -237,43 +237,13 @@ INIT_PATH = "kwimage_ext/__init__.py"
 VERSION = parse_version("kwimage_ext/__init__.py")
 
 if __name__ == "__main__":
-    setupkw = {}
-
-    setupkw["install_requires"] = parse_requirements("requirements/runtime.txt")
-    setupkw["extras_require"] = {
-        "all": parse_requirements("requirements.txt"),
-        "tests": parse_requirements("requirements/tests.txt"),
-        "optional": parse_requirements("requirements/optional.txt"),
-        "all-strict": parse_requirements("requirements.txt", versions="strict"),
-        "runtime-strict": parse_requirements(
-            "requirements/runtime.txt", versions="strict"
-        ),
-        "tests-strict": parse_requirements("requirements/tests.txt", versions="strict"),
-        "optional-strict": parse_requirements(
-            "requirements/optional.txt", versions="strict"
-        ),
-    }
-
-    setupkw["name"] = NAME
-    setupkw["version"] = VERSION
-    setupkw["author"] = ["Kitware Inc.", "Jon Crall"]
-    setupkw["author_email"] = "jon.crall@kitware.com"
-    setupkw["url"] = "https://gitlab.kitware.com/computer-vision/kwimage_ext"
-    setupkw["description"] = "The kwimage_ext module"
-    setupkw["long_description"] = parse_description()
-    setupkw["long_description_content_type"] = "text/x-rst"
-    setupkw["license"] = "Apache 2"
-    setupkw["packages"] = find_packages(".")
-    setupkw["python_requires"] = ">=3.9"
-    setupkw["classifiers"] = [
-        "Development Status :: 3 - Alpha",
-        "Intended Audience :: Developers",
-        "Topic :: Software Development :: Libraries :: Python Modules",
-        "Topic :: Utilities",
-        "Programming Language :: Python :: 3.10",
-        "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: 3.13",
-        "Programming Language :: Python :: 3.14",
-    ]
-    setup(**setupkw)
+    # This setup.py is retained only for the explicit legacy Cython/C parity
+    # build.  Production package metadata and dependencies live in
+    # pyproject.toml and are consumed by maturin.  Do not duplicate them here:
+    # modern setuptools reads [project] even for this legacy build, and two
+    # sources of truth can silently drift (the old setup.py claimed Python 3.9).
+    setup(
+        name=NAME,
+        version=VERSION,
+        packages=find_packages("."),
+    )

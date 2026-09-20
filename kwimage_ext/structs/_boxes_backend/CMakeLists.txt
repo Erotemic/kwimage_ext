@@ -1,12 +1,23 @@
-
 option(BUILD_BOXES_CYTHON "Are your IoU ops TOO SLOW? Try Cython!" True)
 if (BUILD_BOXES_CYTHON)
 
   set(cython_source "cython_boxes.pyx")
-  set(module_name "cython_boxes")
+  set(module_name "cython_boxes_legacy")
+
+  # Cython derives the extension initializer (PyInit_*) from the .pyx
+  # basename, not from the CMake target name.  The legacy oracle is installed
+  # under a non-colliding *_legacy name, so give Cython a build-tree copy with
+  # that basename as well.  This changes only the generated module identity;
+  # the historical implementation remains the original source file.
+  set(cython_legacy_source "${CMAKE_CURRENT_BINARY_DIR}/${module_name}.pyx")
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/${cython_source}"
+    "${cython_legacy_source}"
+    COPYONLY
+  )
 
   # Translate Cython into C/C++
-  add_cython_target(${module_name} "${cython_source}" C OUTPUT_VAR sources)
+  add_cython_target(${module_name} "${cython_legacy_source}" C OUTPUT_VAR sources)
 
   # Create C++ library. Specify include dirs and link libs as normal
   add_library(${module_name} MODULE ${sources})

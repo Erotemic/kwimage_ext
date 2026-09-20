@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -euo pipefail
+
 __doc__="
 Runs cibuildwheel to create linux binary wheels.
 
@@ -9,22 +11,30 @@ SeeAlso:
     pyproject.toml
 "
 
-if ! which docker ; then
+if ! command -v docker >/dev/null 2>&1 ; then
     echo "Missing requirement: docker. Please install docker before running build_wheels.sh"
     exit 1
 fi
-if ! which cibuildwheel ; then
+if ! command -v cibuildwheel >/dev/null 2>&1 ; then
     echo "The cibuildwheel module is not installed. Please pip install cibuildwheel before running build_wheels.sh"
     exit 1
 fi
 
-LOCAL_CP_VERSION=$(python3 -c "import sys; print('cp' + ''.join(list(map(str, sys.version_info[0:2]))))")
-echo "LOCAL_CP_VERSION = $LOCAL_CP_VERSION"
+# Reusable/stable-ABI wheel selection is packaging policy.
+# Honor [tool.cibuildwheel].build unless the caller explicitly
+# supplied CIBW_BUILD in the environment.
+if [[ -n "${CIBW_BUILD:-}" ]]; then
+    echo "CIBW_BUILD override = $CIBW_BUILD"
+else
+    echo "CIBW_BUILD = <from pyproject.toml>"
+fi
 
-# Build for only the current version of Python
-export CIBW_BUILD="${LOCAL_CP_VERSION}-*"
+# Recreate the output directory so stale wheels cannot satisfy
+# post-build validation or be mistaken for this build.
+rm -rf wheelhouse
+mkdir -p wheelhouse
 
+cibuildwheel --config-file pyproject.toml --platform linux --archs x86_64
 
-#pip wheel -w wheelhouse .
-# python -m build --wheel -o wheelhouse  #  kwimage_ext: +COMMENT_IF(binpy)
-cibuildwheel --config-file pyproject.toml --platform linux --archs x86_64  #  kwimage_ext: +UNCOMMENT_IF(binpy)
+# Project-owned artifact validation.
+python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl

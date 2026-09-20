@@ -447,6 +447,15 @@ void rleFrPoly(RLE *R, const double *xy, siz k, siz h, siz w)
 
     double scale = 5;  // hard coded scale factor
 
+    /* Degenerate polygons have no area.  Historically this path accessed
+     * x[0] even for k==0 and produced unstable behavior for k<3. */
+    if(k < 3)
+    {
+        uint count = (uint)(h * w);
+        rleInit(R, h, w, 1, &count);
+        return;
+    }
+
     siz j = 0;  // reusable index variable
     siz m = 0;  // reusable, encodes number of uv points we will need
 

@@ -1,8 +1,17 @@
-
-
 function(cpu_cython_module cython_source module_name)
+  # Cython derives PyInit_* from the .pyx basename.  The reference modules use
+  # *_legacy filenames so they cannot shadow the Rust-first Python shims; copy
+  # the historical source into the build tree under that same basename before
+  # translating it.  The source contents are unchanged.
+  set(cython_legacy_source "${CMAKE_CURRENT_BINARY_DIR}/${module_name}.pyx")
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/${cython_source}"
+    "${cython_legacy_source}"
+    COPYONLY
+  )
+
   # Translate Cython into C/C++
-  add_cython_target(${module_name} "${cython_source}" C OUTPUT_VAR sources)
+  add_cython_target(${module_name} "${cython_legacy_source}" C OUTPUT_VAR sources)
   # Create C++ library. Specify include dirs and link libs as normal
   add_library(${module_name} MODULE ${sources})
   target_include_directories(
@@ -33,11 +42,11 @@ if (BUILD_CPU_NMS)
 
   #set(cython_source "cpu_nms.pyx")
   #set(module_name "cpu_nms")
-  cpu_cython_module("cpu_nms.pyx" "cpu_nms")
+  cpu_cython_module("cpu_nms.pyx" "cpu_nms_legacy")
 
   #set(cython_source "cpu_soft_nms.pyx")
   #set(module_name "cpu_soft_nms.pyx")
-  cpu_cython_module("cpu_soft_nms.pyx" "cpu_soft_nms")
+  cpu_cython_module("cpu_soft_nms.pyx" "cpu_soft_nms_legacy")
 
 endif()
 
@@ -82,4 +91,3 @@ if (USE_CUDA AND BUILD_GPU_NMS)
   file(RELATIVE_PATH _install_dest "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
   install(TARGETS ${module_name} LIBRARY DESTINATION "${_install_dest}")
 endif()
-
