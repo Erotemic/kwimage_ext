@@ -36,10 +36,10 @@ fn _rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mask::merge, m)?)?;
     m.add_function(wrap_pyfunction!(mask::area, m)?)?;
     m.add_function(wrap_pyfunction!(mask::iou, m)?)?;
-    m.add_function(wrap_pyfunction!(mask::to_bbox, m)?)?;
-    m.add_function(wrap_pyfunction!(mask::fr_bbox, m)?)?;
-    m.add_function(wrap_pyfunction!(mask::fr_poly, m)?)?;
-    m.add_function(wrap_pyfunction!(mask::fr_uncompressed_rle, m)?)?;
+    m.add_function(wrap_pyfunction!(mask::toBbox, m)?)?;
+    m.add_function(wrap_pyfunction!(mask::frBbox, m)?)?;
+    m.add_function(wrap_pyfunction!(mask::frPoly, m)?)?;
+    m.add_function(wrap_pyfunction!(mask::frUncompressedRLE, m)?)?;
     m.add_function(wrap_pyfunction!(mask::_rle_bytes_to_array, m)?)?;
     m.add_function(wrap_pyfunction!(mask::_rle_array_to_bytes, m)?)?;
 

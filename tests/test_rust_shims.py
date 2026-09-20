@@ -1,7 +1,7 @@
 import importlib
-import os
-import sys
 import types
+
+import numpy as np
 
 
 def test_shim_modules_importable_without_extensions():
@@ -26,7 +26,7 @@ def test_historical_import_names_resolve_to_unshadowable_api_modules():
     assert boxes_import is boxes_attr
     assert masks_import is masks_attr
     assert nms_import is nms_attr
-    # These are deliberately non-colliding Python API modules.  In particular,
+    # These are deliberately non-colliding Python API modules. In particular,
     # a stale cython_mask*.so in an editable checkout must not win the import.
     assert boxes_attr.__name__.endswith('._api')
     assert masks_attr.__name__.endswith('._api')
@@ -98,3 +98,27 @@ def test_conflicting_force_flags_are_rejected(monkeypatch):
         assert 'cannot both be enabled' in str(ex)
     else:
         raise AssertionError('conflicting backend force flags must be rejected')
+
+
+def test_boxes_overlap_shape_and_dtype():
+    boxes_mod = importlib.import_module(
+        'kwimage_ext.structs._boxes_backend.cython_boxes')
+    boxes = np.array([[0, 0, 10, 10], [0, 0, 5, 5]], dtype=np.float32)
+    q = np.array([[0, 0, 10, 10]], dtype=np.float32)
+    got = boxes_mod.bbox_overlaps(boxes, q)
+    assert got.shape == (2, 1)
+    assert got.dtype == np.float32
+    assert np.isclose(got[0, 0], 1.0)
+
+
+def test_cpu_nms_smoke():
+    mod = importlib.import_module('kwimage_ext.algo._nms_backend.cpu_nms')
+    ltrb = np.array([
+        [0, 0, 10, 10],
+        [0, 0, 10, 10],
+        [50, 50, 60, 60],
+    ], dtype=np.float32)
+    scores = np.array([0.9, 0.8, 0.7], dtype=np.float32)
+    keep = mod.cpu_nms(ltrb, scores, 0.5, 0.0)
+    assert keep[0] == 0
+    assert 2 in keep

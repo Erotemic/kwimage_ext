@@ -37,8 +37,9 @@ all = [
   "coverage>=6.1.1",
   "torch>=1.11.0",
 ]
-# Keep generated CI extra names valid during the Rust transition.  These are
-# intentionally conservative aliases; xcookie can regenerate exact pins later.
+
+# Keep generated CI extra names valid during the Rust transition.
+# These are conservative aliases; xcookie can regenerate exact pins later.
 runtime-strict = []
 tests-strict = [
   "xdoctest>=1.1.5",
