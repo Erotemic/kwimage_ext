@@ -267,31 +267,76 @@ fn push_compressed_count(
     }
 }
 
-fn encode_plane_memory_order(h: usize, w: usize, data: &[u8]) -> Rle {
-    debug_assert_eq!(data.len(), h * w);
-    let mut counts = Vec::with_capacity(h * w / 4 + 2);
-    let mut previous = 0u8;
-    let mut count = 0u32;
-    for &pixel in data {
-        let value = if pixel == 0 { 0 } else { 1 };
-        if value != previous {
-            counts.push(count);
-            count = 0;
-            previous = value;
-        }
-        count += 1;
-    }
-    counts.push(count);
-    Rle { h, w, counts }
+#[inline(always)]
+fn word_has_zero_byte(word: u64) -> bool {
+    // Portable scalar zero-byte detection. This is the classic subtract / mask
+    // trick and deliberately uses only baseline integer operations: no target
+    // features, runtime SIMD dispatch, or unsafe loads are required.
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+    (word.wrapping_sub(LO) & !word & HI) != 0
 }
 
-fn prefer_two_pass_encode(data: &[u8]) -> bool {
-    // The fused encoder wins when transitions are common because it avoids an
-    // intermediate run-count vector and second compression pass.  For masks
-    // with very long runs, however, keeping byte-compression work out of the
-    // pixel-scanning loop is faster.  Sample four small windows spread across
-    // the plane to choose between the two equivalent implementations without
-    // making an additional full pass over the mask.
+#[inline(always)]
+fn word_matches_logical_value(word: u64, logical_value: u8) -> bool {
+    if logical_value == 0 {
+        word == 0
+    } else {
+        // Rust's mask encoder treats every non-zero byte as foreground.  A
+        // word is therefore entirely foreground exactly when it contains no
+        // zero byte.
+        !word_has_zero_byte(word)
+    }
+}
+
+#[inline]
+fn find_logical_transition(data: &[u8], start: usize, logical_value: u8) -> usize {
+    let mut pos = start;
+
+    // Structured masks are dominated by long uniform runs. Check 32 bytes at
+    // a time using four portable u64 loads, then narrow to one word and finally
+    // individual bytes near the transition. `from_ne_bytes` copies from the
+    // slice safely and lets LLVM turn these into ordinary unaligned loads on
+    // targets where that is profitable.
+    while data.len() - pos >= 32 {
+        let chunk = &data[pos..pos + 32];
+        let w0 = u64::from_ne_bytes(chunk[0..8].try_into().unwrap());
+        let w1 = u64::from_ne_bytes(chunk[8..16].try_into().unwrap());
+        let w2 = u64::from_ne_bytes(chunk[16..24].try_into().unwrap());
+        let w3 = u64::from_ne_bytes(chunk[24..32].try_into().unwrap());
+        if word_matches_logical_value(w0, logical_value)
+            && word_matches_logical_value(w1, logical_value)
+            && word_matches_logical_value(w2, logical_value)
+            && word_matches_logical_value(w3, logical_value)
+        {
+            pos += 32;
+        } else {
+            break;
+        }
+    }
+
+    while data.len() - pos >= 8 {
+        let word = u64::from_ne_bytes(data[pos..pos + 8].try_into().unwrap());
+        if word_matches_logical_value(word, logical_value) {
+            pos += 8;
+        } else {
+            break;
+        }
+    }
+
+    while pos < data.len() && u8::from(data[pos] != 0) == logical_value {
+        pos += 1;
+    }
+    pos
+}
+
+fn prefer_long_run_encode(data: &[u8]) -> bool {
+    // The ordinary fused encoder wins when transitions are common because it
+    // avoids an intermediate run-count vector and second compression pass.
+    // Structured masks spend almost all of their time scanning long runs, so
+    // sample four windows and use a word-at-a-time scanner when transition
+    // density is very low. A wrong prediction affects only performance; both
+    // encoders produce the same canonical COCO byte stream.
     if data.len() <= 1 {
         return true;
     }
@@ -331,6 +376,44 @@ fn prefer_two_pass_encode(data: &[u8]) -> bool {
     // comfortably above this threshold.  A wrong prediction only affects
     // performance; both paths have identical output semantics.
     transitions * LOW_TRANSITION_DENOMINATOR <= comparisons
+}
+
+fn encode_plane_bytes_long_runs(h: usize, w: usize, data: &[u8]) -> Vec<u8> {
+    debug_assert_eq!(data.len(), h * w);
+
+    // Long-run masks have very few encoded counts, so a small reservation is
+    // sufficient. The hot work is finding transitions, which is accelerated by
+    // `find_logical_transition` without changing the portable wheel ISA.
+    let mut out = Vec::with_capacity(64);
+    let mut position = 0usize;
+    let mut logical_value = 0u8;
+    let mut count_index = 0usize;
+    let mut previous_same_parity = [0u32; 2];
+
+    if data.is_empty() {
+        push_compressed_count(
+            &mut out,
+            0,
+            count_index,
+            &mut previous_same_parity,
+        );
+        return out;
+    }
+
+    while position < data.len() {
+        let transition = find_logical_transition(data, position, logical_value);
+        let run_length = (transition - position) as u32;
+        push_compressed_count(
+            &mut out,
+            run_length,
+            count_index,
+            &mut previous_same_parity,
+        );
+        count_index += 1;
+        position = transition;
+        logical_value ^= 1;
+    }
+    out
 }
 
 fn encode_plane_bytes_memory_order(h: usize, w: usize, data: &[u8]) -> Vec<u8> {
@@ -530,13 +613,12 @@ pub fn encode<'py>(
             let start = i * plane_size;
             let stop = start + plane_size;
             let plane = &data[start..stop];
-            if prefer_two_pass_encode(plane) {
-                let rle = encode_plane_memory_order(h, w, plane);
-                result.push(rle_to_object(py, &rle)?);
+            let counts = if prefer_long_run_encode(plane) {
+                encode_plane_bytes_long_runs(h, w, plane)
             } else {
-                let counts = encode_plane_bytes_memory_order(h, w, plane);
-                result.push(rle_bytes_to_object(py, h, w, &counts)?);
-            }
+                encode_plane_bytes_memory_order(h, w, plane)
+            };
+            result.push(rle_bytes_to_object(py, h, w, &counts)?);
         }
     } else {
         for i in 0..n {

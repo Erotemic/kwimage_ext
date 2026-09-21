@@ -94,6 +94,10 @@ CASE_SPECS = (
         perf_default=True,
     ),
     CaseSpec(
+        'mask_encode_solid_512x512x4', 'mask',
+        'Four solid/half-plane 512 x 512 masks; extreme long-run encode workload.',
+    ),
+    CaseSpec(
         'mask_iou_fragmented_48', 'mask',
         '48 x 48 fragmented-mask IoU matrix; RLE run-scanning workload.',
         perf_default=True,
@@ -361,6 +365,11 @@ def _prepare_mask_case(spec, backend, seed):
                     h = int(rng.randint(8, 96))
                     w = int(rng.randint(8, 96))
                     masks[y1:min(512, y1 + h), x1:min(512, x1 + w), chan] = 1
+        elif spec.name == 'mask_encode_solid_512x512x4':
+            masks = np.zeros((512, 512, 4), dtype=np.uint8)
+            masks[:, :, 1] = 1
+            masks[:256, :, 2] = 1
+            masks[:, :256, 3] = 1
         else:
             raise AssertionError(spec.name)
         masks = np.asfortranarray(masks)
