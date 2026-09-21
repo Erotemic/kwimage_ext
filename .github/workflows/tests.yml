@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout source
-      uses: actions/checkout@v6.0.2
+      uses: actions/checkout@v7.0.1
     - name: Set up Python 3.14 for linting
       uses: actions/setup-python@v6.2.0
       with:
@@ -71,7 +71,7 @@ jobs:
         - auto
     steps:
     - name: Checkout source
-      uses: actions/checkout@v6.0.2
+      uses: actions/checkout@v7.0.1
     - name: Build binary wheels
       uses: pypa/cibuildwheel@v4.1.1
       with:
@@ -305,7 +305,7 @@ jobs:
           use-lockfile: 'false'
     steps:
     - name: Checkout source
-      uses: actions/checkout@v6.0.2
+      uses: actions/checkout@v7.0.1
     - name: Enable MSVC 64bit
       uses: ilammy/msvc-dev-cmd@v1.13.0
       if: ${{ startsWith(matrix.os, 'windows-') }}
