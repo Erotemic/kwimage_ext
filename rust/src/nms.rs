@@ -95,8 +95,8 @@ pub fn soft_nms<'py>(
     bias: f32,
     method: u32,
 ) -> PyResult<Bound<'py, PyArray1<isize>>> {
-    let mut boxes = unsafe { ltrb.as_array_mut() };
-    let mut score_view = unsafe { scores.as_array_mut() };
+    let mut boxes = ltrb.as_array_mut();
+    let mut score_view = scores.as_array_mut();
     check_ltrb_shape(boxes.shape())?;
     if boxes.nrows() != score_view.len() {
         return Err(pyo3::exceptions::PyValueError::new_err(
