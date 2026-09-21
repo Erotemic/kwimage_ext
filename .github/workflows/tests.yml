@@ -32,7 +32,7 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v6.0.2
     - name: Set up Python 3.14 for linting
-      uses: actions/setup-python@v6.2.0
+      uses: actions/setup-python@v7.0.0
       with:
         python-version: '3.14'
     - name: Install dependencies
@@ -85,7 +85,7 @@ jobs:
       shell: bash
       run: ls -la wheelhouse
     - name: Set up Python 3.14 for wheel validation
-      uses: actions/setup-python@v6.2.0
+      uses: actions/setup-python@v7.0.0
       with:
         python-version: '3.14'
     - name: Validate built wheel artifacts
@@ -312,7 +312,7 @@ jobs:
       with:
         arch: ${{ contains(matrix.os, 'arm') && 'arm64' || 'x64' }}
     - name: Setup Python
-      uses: actions/setup-python@v6.2.0
+      uses: actions/setup-python@v7.0.0
       with:
         python-version: ${{ matrix.python-version }}
         allow-prereleases: ${{ matrix.allow-prereleases }}
