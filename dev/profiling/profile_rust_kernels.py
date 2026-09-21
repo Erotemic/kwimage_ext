@@ -33,6 +33,9 @@ BENCH_SCRIPT = REPO_ROOT / 'dev' / 'benchmarks' / 'rust_kernel_benchmarks.py'
 DEFAULT_PERF_CASES = (
     'boxes_iou_large',
     'cpu_nms_sparse_1000',
+    'soft_nms_gaussian_512',
+    'mask_encode_512x512x4',
+    'mask_encode_structured_512x512x4',
     'mask_iou_fragmented_48',
     'assignment_sparse',
 )
@@ -48,6 +51,21 @@ PERF_EVENTS = (
     'context-switches',
     'cpu-migrations',
 )
+
+PORTABLE_PROFILE_RUSTFLAGS = '-C target-cpu=generic'
+
+
+BENCHMARK_THREAD_ENV = {
+    # kwimage_ext kernels are single-threaded. Imported numeric libraries may
+    # otherwise start worker pools that perf counts as part of the process,
+    # obscuring the kernel counters and increasing run-to-run noise.
+    'OPENBLAS_NUM_THREADS': '1',
+    'OMP_NUM_THREADS': '1',
+    'MKL_NUM_THREADS': '1',
+    'NUMEXPR_NUM_THREADS': '1',
+    'BLIS_NUM_THREADS': '1',
+    'VECLIB_MAXIMUM_THREADS': '1',
+}
 
 
 def _sha256(path):
@@ -161,9 +179,13 @@ def _basic_metadata(argv):
         'python': sys.version,
         'python_executable': sys.executable,
         'source_version': _source_version(),
+        'benchmark_thread_env': dict(BENCHMARK_THREAD_ENV),
         'build_env': {
             key: os.environ.get(key)
-            for key in ['RUSTFLAGS', 'CFLAGS', 'CXXFLAGS', 'CARGO_PROFILE_RELEASE_DEBUG']
+            for key in [
+                'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_RUSTFLAGS',
+                'CFLAGS', 'CXXFLAGS', 'CARGO_PROFILE_RELEASE_DEBUG',
+            ]
             if os.environ.get(key) is not None
         },
         'cpu_affinity': affinity,
@@ -223,17 +245,40 @@ def _capture_environment(bundle, records, env):
         _capture_text(bundle, name, command, records, env=env)
 
 
+def _portable_profile_build_env(env):
+    """Create a production-like portable Rust build environment.
+
+    Profiling evidence must describe the ISA policy used by published wheels,
+    not whatever CPU happens to run the benchmark.  In particular, never
+    inherit ambient ``target-cpu=native`` / ``target-feature`` flags.
+
+    ``target-cpu=generic`` is rustc's portable target baseline.  Debug info is
+    enabled through the Cargo profile rather than architecture-affecting
+    rustflags, and perf uses DWARF call graphs so frame pointers are not forced
+    into the timed binary.
+    """
+    build_env = dict(env)
+    ignored = {}
+    architecture_flag_keys = {
+        'RUSTFLAGS',
+        'CARGO_ENCODED_RUSTFLAGS',
+        'CARGO_BUILD_RUSTFLAGS',
+    }
+    for key in list(build_env):
+        if (
+            key in architecture_flag_keys or
+            (key.startswith('CARGO_TARGET_') and key.endswith('_RUSTFLAGS'))
+        ):
+            ignored[key] = build_env.pop(key)
+    build_env['CARGO_PROFILE_RELEASE_DEBUG'] = '1'
+    build_env['RUSTFLAGS'] = PORTABLE_PROFILE_RUSTFLAGS
+    return build_env, ignored
+
+
 def _rebuild_profiled(bundle, records, env):
     result_path = bundle / 'build' / 'maturin-develop.txt'
     result_path.parent.mkdir(parents=True, exist_ok=True)
-    build_env = dict(env)
-    build_env['CARGO_PROFILE_RELEASE_DEBUG'] = '1'
-    prior_rustflags = build_env.get('RUSTFLAGS', '').strip()
-    frame_pointer_flag = '-C force-frame-pointers=yes'
-    build_env['RUSTFLAGS'] = (
-        f'{prior_rustflags} {frame_pointer_flag}'.strip()
-        if frame_pointer_flag not in prior_rustflags else prior_rustflags
-    )
+    build_env, ignored_rustflags = _portable_profile_build_env(env)
     maturin = shutil.which('maturin')
     if maturin is None:
         result_path.write_text('maturin executable not found on PATH\n')
@@ -254,9 +299,17 @@ def _rebuild_profiled(bundle, records, env):
         )
     records.append({k: v for k, v in result.items() if k not in {'stdout', 'stderr'}})
     (bundle / 'build' / 'profile-build-env.json').write_text(json.dumps({
+        'policy': 'portable-published-wheel-isa',
+        'target_cpu': 'generic',
         'CARGO_PROFILE_RELEASE_DEBUG': build_env['CARGO_PROFILE_RELEASE_DEBUG'],
         'RUSTFLAGS': build_env['RUSTFLAGS'],
-    }, indent=2) + '\n')
+        'ignored_ambient_rustflags': ignored_rustflags,
+        'notes': [
+            'Architecture-affecting ambient Cargo/Rust flags are intentionally ignored.',
+            'Debug info does not change the intended CPU ISA baseline.',
+            'No frame-pointer forcing is used in the timed binary.',
+        ],
+    }, indent=2, sort_keys=True) + '\n')
     return result
 
 
@@ -318,17 +371,16 @@ print(json.dumps(payload, sort_keys=True))
 
 
 def _run_correctness_gate(bundle, records, env, quick, version_state):
-    tests = [
-        'tests/test_rust_backend.py',
-        'tests/test_rust_assignment.py',
-        'tests/test_rust_mask_and_softnms.py',
-        'tests/test_rust_profiling_harness.py',
-    ]
-    if quick:
-        tests = [
-            'tests/test_rust_backend.py',
-            'tests/test_rust_profiling_harness.py',
-        ]
+    # Keep the evidence gate in sync as new Rust regression tests are added.
+    # The earlier hard-coded list accidentally omitted the fast-path parity
+    # tests added by the first optimization round.
+    tests = sorted(
+        str(path.relative_to(REPO_ROOT))
+        for path in (REPO_ROOT / 'tests').glob('test_rust_*.py')
+    )
+    backend_parity = REPO_ROOT / 'tests' / 'test_backend_parity.py'
+    if not quick and backend_parity.exists():
+        tests.append(str(backend_parity.relative_to(REPO_ROOT)))
     full_result = _run(
         [sys.executable, '-m', 'pytest', '-q', *tests],
         env=env,
@@ -380,12 +432,24 @@ def _run_correctness_gate(bundle, records, env, quick, version_state):
 
 def _benchmark_provenance(bundle, benchmark_json):
     # Require benchmark source and compiled extension versions to agree.
+    build_policy_path = bundle / 'build' / 'profile-build-env.json'
+    build_policy = (
+        json.loads(build_policy_path.read_text())
+        if build_policy_path.exists() else None
+    )
     status = {
         'ok': False,
         'source_version': _source_version(),
         'extension_version': None,
         'extension_path': None,
         'extension_sha256': None,
+        'portable_build_verified': (
+            build_policy is not None and
+            build_policy.get('policy') == 'portable-published-wheel-isa' and
+            build_policy.get('target_cpu') == 'generic' and
+            build_policy.get('RUSTFLAGS') == PORTABLE_PROFILE_RUSTFLAGS
+        ),
+        'build_policy': build_policy,
     }
     if benchmark_json.exists():
         payload = json.loads(benchmark_json.read_text())
@@ -635,6 +699,9 @@ def _write_summary(bundle, benchmark_json, correctness_result, perf_results):
         '- `source/` snapshots the Rust kernels and benchmark/profiling front doors.',
         '- `git/` records HEAD, dirty status, and the working-tree diff.',
         '- Raw perf counter output and sampled reports are under `perf/<case>/`.',
+        '- Profile rebuilds use `-C target-cpu=generic`; ambient Rust/Cargo ISA flags are ignored.',
+        '- The timed profiled binary does not force frame pointers; perf uses DWARF call graphs.',
+        '- No runtime SIMD/multiversion path is implied by this profiling policy.',
         '- Compare timing results only on equivalent machines/toolchains/workloads.',
         '',
     ])
@@ -693,6 +760,7 @@ def main(argv=None):
     env = dict(os.environ)
     env['KWIMAGE_EXT_FORCE_RUST'] = '1'
     env.pop('KWIMAGE_EXT_FORCE_LEGACY', None)
+    env.update(BENCHMARK_THREAD_ENV)
 
     commands = []
     hard_failure = False

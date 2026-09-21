@@ -77,10 +77,21 @@ CASE_SPECS = (
     CaseSpec(
         'soft_nms_gaussian_512', 'nms',
         '512 boxes with Gaussian Soft-NMS; mutating/transcendental workload.',
+        perf_default=True,
     ),
     CaseSpec(
         'mask_encode_512x512x4', 'mask',
         'Four sparse 512 x 512 masks encoded to COCO RLE.',
+        perf_default=True,
+    ),
+    CaseSpec(
+        'mask_encode_dense_512x512x4', 'mask',
+        'Four 50%-dense random 512 x 512 masks; run-heavy RLE encode workload.',
+    ),
+    CaseSpec(
+        'mask_encode_structured_512x512x4', 'mask',
+        'Four structured 512 x 512 masks; long-run/object-overhead encode workload.',
+        perf_default=True,
     ),
     CaseSpec(
         'mask_iou_fragmented_48', 'mask',
@@ -336,9 +347,23 @@ def _prepare_mask_case(spec, backend, seed):
     if module is None:
         raise LookupError(f'backend {backend!r} unavailable for {spec.name}')
 
-    if spec.name == 'mask_encode_512x512x4':
-        masks = np.asfortranarray(
-            (rng.random_sample((512, 512, 4)) > 0.94).astype(np.uint8))
+    if spec.name.startswith('mask_encode_'):
+        if spec.name == 'mask_encode_512x512x4':
+            masks = (rng.random_sample((512, 512, 4)) > 0.94).astype(np.uint8)
+        elif spec.name == 'mask_encode_dense_512x512x4':
+            masks = (rng.random_sample((512, 512, 4)) > 0.50).astype(np.uint8)
+        elif spec.name == 'mask_encode_structured_512x512x4':
+            masks = np.zeros((512, 512, 4), dtype=np.uint8)
+            for chan in range(masks.shape[2]):
+                for _ in range(24):
+                    y1 = int(rng.randint(0, 448))
+                    x1 = int(rng.randint(0, 448))
+                    h = int(rng.randint(8, 96))
+                    w = int(rng.randint(8, 96))
+                    masks[y1:min(512, y1 + h), x1:min(512, x1 + w), chan] = 1
+        else:
+            raise AssertionError(spec.name)
+        masks = np.asfortranarray(masks)
 
         def call():
             return module.encode(masks)
@@ -629,11 +654,14 @@ def run_perf_workload(name, *, backend='rust', seed=0, seconds=2.0,
         _one_timed_call(case)
     deadline = time.perf_counter() + seconds
     calls = 0
-    digest = None
+    last_result = None
     while time.perf_counter() < deadline:
-        result, _elapsed = _one_timed_call(case)
-        digest = _digest_value(result)
+        last_result, _elapsed = _one_timed_call(case)
         calls += 1
+    # Keep validation outside the sampled hot loop. Hashing every result made
+    # perf attribute a substantial fraction of cycles to SHA256 rather than the
+    # Rust kernel we intended to profile.
+    digest = _digest_value(last_result) if calls else None
     payload = {
         'case': name,
         'backend': backend,

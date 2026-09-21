@@ -2,6 +2,31 @@ use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use numpy::ndarray::Array2;
 use pyo3::prelude::*;
 
+
+#[inline(always)]
+fn cython_builtin_min(a: f32, b: f32) -> f32 {
+    // Cython's optimized two-argument Python builtin min() keeps the first
+    // argument unless the second compares smaller.  That distinction is
+    // observable for NaNs (and equal signed zeroes), so preserve it while
+    // avoiding f32::min's different NaN-selection semantics.
+    if b < a { b } else { a }
+}
+
+#[inline(always)]
+fn cython_builtin_max(a: f32, b: f32) -> f32 {
+    // Likewise, max(a, b) starts from a and only replaces it when b > a.
+    if b > a { b } else { a }
+}
+
+#[derive(Clone, Copy)]
+struct PreparedBox {
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    area: f32,
+}
+
 fn check_boxes(name: &str, arr: &numpy::ndarray::ArrayView2<'_, f32>, width: usize) -> PyResult<()> {
     if arr.ncols() != width {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
@@ -43,32 +68,43 @@ pub fn bbox_ious_c<'py>(
             .as_slice_mut()
             .expect("owned output array must use standard layout");
 
-        let query_areas: Vec<f32> = query_data
+        // Prepack the query geometry once. Iterating this slice in lockstep
+        // with each contiguous output row gives LLVM simple, equal-length
+        // iterators instead of repeated q*4 arithmetic and bounds checks.
+        let prepared_query: Vec<PreparedBox> = query_data
             .chunks_exact(4)
-            .map(|q| (q[2] - q[0] + bias) * (q[3] - q[1] + bias))
+            .map(|q| PreparedBox {
+                x1: q[0],
+                y1: q[1],
+                x2: q[2],
+                y2: q[3],
+                area: (q[2] - q[0] + bias) * (q[3] - q[1] + bias),
+            })
             .collect();
 
-        for bi in 0..n {
-            let base = bi * 4;
-            let bx1 = boxes_data[base];
-            let by1 = boxes_data[base + 1];
-            let bx2 = boxes_data[base + 2];
-            let by2 = boxes_data[base + 3];
-            let barea = (bx2 - bx1 + bias) * (by2 - by1 + bias);
+        for (bi, b) in boxes_data.chunks_exact(4).enumerate() {
+            let bx1 = b[0];
+            let by1 = b[1];
+            let bx2 = b[2];
+            let by2 = b[3];
             let out_row = &mut out_data[(bi * k)..((bi + 1) * k)];
 
-            for qi in 0..k {
-                let qbase = qi * 4;
-                let qx1 = query_data[qbase];
-                let qy1 = query_data[qbase + 1];
-                let qx2 = query_data[qbase + 2];
-                let qy2 = query_data[qbase + 3];
-                let iw = bx2.min(qx2) - bx1.max(qx1) + bias;
+            // Preserve the historical Cython behavior for malformed boxes:
+            // a NaN in any candidate-box coordinate leaves the pre-zeroed
+            // overlap row untouched. Query-side NaNs are intentionally *not*
+            // handled here; legacy Cython propagates those to NaN instead.
+            if bx1.is_nan() || by1.is_nan() || bx2.is_nan() || by2.is_nan() {
+                continue;
+            }
+
+            let barea = (bx2 - bx1 + bias) * (by2 - by1 + bias);
+            for (cell, q) in out_row.iter_mut().zip(prepared_query.iter()) {
+                let iw = cython_builtin_min(bx2, q.x2) - cython_builtin_max(bx1, q.x1) + bias;
                 if iw > 0.0 {
-                    let ih = by2.min(qy2) - by1.max(qy1) + bias;
+                    let ih = cython_builtin_min(by2, q.y2) - cython_builtin_max(by1, q.y1) + bias;
                     if ih > 0.0 {
                         let inter = iw * ih;
-                        out_row[qi] = inter / (query_areas[qi] + barea - inter);
+                        *cell = inter / (q.area + barea - inter);
                     }
                 }
             }
@@ -80,9 +116,12 @@ pub fn bbox_ious_c<'py>(
             let qarea = (q[2] - q[0] + bias) * (q[3] - q[1] + bias);
             for bi in 0..n {
                 let b = boxes.row(bi);
-                let iw = b[2].min(q[2]) - b[0].max(q[0]) + bias;
+                if b[0].is_nan() || b[1].is_nan() || b[2].is_nan() || b[3].is_nan() {
+                    continue;
+                }
+                let iw = cython_builtin_min(b[2], q[2]) - cython_builtin_max(b[0], q[0]) + bias;
                 if iw > 0.0 {
-                    let ih = b[3].min(q[3]) - b[1].max(q[1]) + bias;
+                    let ih = cython_builtin_min(b[3], q[3]) - cython_builtin_max(b[1], q[1]) + bias;
                     if ih > 0.0 {
                         let barea = (b[2] - b[0] + bias) * (b[3] - b[1] + bias);
                         let inter = iw * ih;

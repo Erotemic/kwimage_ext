@@ -74,11 +74,16 @@ fn bytes_to_counts(bytes: &[u8]) -> PyResult<Vec<u32>> {
     Ok(counts)
 }
 
-fn rle_to_object(py: Python<'_>, rle: &Rle) -> PyResult<PyObject> {
+fn rle_bytes_to_object(py: Python<'_>, h: usize, w: usize, counts: &[u8]) -> PyResult<PyObject> {
     let d = PyDict::new_bound(py);
-    d.set_item("size", vec![rle.h, rle.w])?;
-    d.set_item("counts", PyBytes::new_bound(py, &counts_to_bytes(&rle.counts)))?;
+    d.set_item("size", vec![h, w])?;
+    d.set_item("counts", PyBytes::new_bound(py, counts))?;
     Ok(d.into_py(py))
+}
+
+fn rle_to_object(py: Python<'_>, rle: &Rle) -> PyResult<PyObject> {
+    let counts = counts_to_bytes(&rle.counts);
+    rle_bytes_to_object(py, rle.h, rle.w, &counts)
 }
 
 fn extract_count_bytes(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
@@ -231,6 +236,37 @@ where
     Rle { h, w, counts }
 }
 
+#[inline(always)]
+fn push_compressed_count(
+    out: &mut Vec<u8>,
+    count: u32,
+    count_index: usize,
+    previous_same_parity: &mut [u32; 2],
+) {
+    // COCO's compressed RLE stores count[i] - count[i - 2] from the fourth
+    // run onward. A two-entry parity ring is therefore enough to compress a
+    // run as soon as it is discovered; no intermediate Vec<u32> is needed.
+    let parity = count_index & 1;
+    let mut x = count as i64;
+    if count_index > 2 {
+        x -= previous_same_parity[parity] as i64;
+    }
+    previous_same_parity[parity] = count;
+
+    loop {
+        let mut c = (x & 0x1f) as u8;
+        x >>= 5;
+        let more = if c & 0x10 != 0 { x != -1 } else { x != 0 };
+        if more {
+            c |= 0x20;
+        }
+        out.push(c + 48);
+        if !more {
+            break;
+        }
+    }
+}
+
 fn encode_plane_memory_order(h: usize, w: usize, data: &[u8]) -> Rle {
     debug_assert_eq!(data.len(), h * w);
     let mut counts = Vec::with_capacity(h * w / 4 + 2);
@@ -247,6 +283,90 @@ fn encode_plane_memory_order(h: usize, w: usize, data: &[u8]) -> Rle {
     }
     counts.push(count);
     Rle { h, w, counts }
+}
+
+fn prefer_two_pass_encode(data: &[u8]) -> bool {
+    // The fused encoder wins when transitions are common because it avoids an
+    // intermediate run-count vector and second compression pass.  For masks
+    // with very long runs, however, keeping byte-compression work out of the
+    // pixel-scanning loop is faster.  Sample four small windows spread across
+    // the plane to choose between the two equivalent implementations without
+    // making an additional full pass over the mask.
+    if data.len() <= 1 {
+        return true;
+    }
+
+    const SAMPLE_WINDOW: usize = 256;
+    const SAMPLE_WINDOWS: usize = 4;
+    const LOW_TRANSITION_DENOMINATOR: usize = 32;
+
+    let window_len = data.len().min(SAMPLE_WINDOW);
+    let num_windows = if data.len() <= window_len { 1 } else { SAMPLE_WINDOWS };
+    let span = data.len() - window_len;
+    let mut transitions = 0usize;
+    let mut comparisons = 0usize;
+
+    for window_index in 0..num_windows {
+        let start = if num_windows == 1 {
+            0
+        } else {
+            window_index * span / (num_windows - 1)
+        };
+        let sample = &data[start..(start + window_len)];
+        let mut iter = sample.iter();
+        let Some(&first) = iter.next() else {
+            continue;
+        };
+        let mut previous = first != 0;
+        for &pixel in iter {
+            let value = pixel != 0;
+            transitions += usize::from(value != previous);
+            comparisons += 1;
+            previous = value;
+        }
+    }
+
+    // <= 1 transition per 32 sampled adjacencies is strongly characteristic
+    // of large structured runs, while sparse-random and dense-random masks are
+    // comfortably above this threshold.  A wrong prediction only affects
+    // performance; both paths have identical output semantics.
+    transitions * LOW_TRANSITION_DENOMINATOR <= comparisons
+}
+
+fn encode_plane_bytes_memory_order(h: usize, w: usize, data: &[u8]) -> Vec<u8> {
+    debug_assert_eq!(data.len(), h * w);
+
+    // Sparse masks commonly compress to well below one byte per pixel. This
+    // initial reservation is deliberately modest; avoiding the entire
+    // intermediate run-count allocation/pass matters more than exact sizing.
+    let mut out = Vec::with_capacity(data.len() / 8 + 16);
+    let mut previous = 0u8;
+    let mut count = 0u32;
+    let mut count_index = 0usize;
+    let mut previous_same_parity = [0u32; 2];
+
+    for &pixel in data {
+        let value = if pixel == 0 { 0 } else { 1 };
+        if value != previous {
+            push_compressed_count(
+                &mut out,
+                count,
+                count_index,
+                &mut previous_same_parity,
+            );
+            count_index += 1;
+            count = 0;
+            previous = value;
+        }
+        count += 1;
+    }
+    push_compressed_count(
+        &mut out,
+        count,
+        count_index,
+        &mut previous_same_parity,
+    );
+    out
 }
 
 fn merge_pair(a: &Rle, b: &Rle, intersect: bool) -> Rle {
@@ -409,8 +529,14 @@ pub fn encode<'py>(
         for i in 0..n {
             let start = i * plane_size;
             let stop = start + plane_size;
-            let rle = encode_plane_memory_order(h, w, &data[start..stop]);
-            result.push(rle_to_object(py, &rle)?);
+            let plane = &data[start..stop];
+            if prefer_two_pass_encode(plane) {
+                let rle = encode_plane_memory_order(h, w, plane);
+                result.push(rle_to_object(py, &rle)?);
+            } else {
+                let counts = encode_plane_bytes_memory_order(h, w, plane);
+                result.push(rle_bytes_to_object(py, h, w, &counts)?);
+            }
         }
     } else {
         for i in 0..n {

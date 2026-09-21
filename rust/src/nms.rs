@@ -1,6 +1,21 @@
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2};
 use pyo3::prelude::*;
 
+#[inline(always)]
+fn legacy_min(a: f32, b: f32) -> f32 {
+    if a <= b { a } else { b }
+}
+
+#[inline(always)]
+fn legacy_max(a: f32, b: f32) -> f32 {
+    if a >= b { a } else { b }
+}
+
+#[inline(always)]
+fn positive(value: f32) -> f32 {
+    if value > 0.0 { value } else { 0.0 }
+}
+
 fn check_ltrb_shape(shape: &[usize]) -> PyResult<()> {
     if shape.len() != 2 || shape[1] != 4 {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -72,12 +87,12 @@ pub fn cpu_nms(
                     continue;
                 }
                 let jbase = j * 4;
-                let xx1 = ix1.max(boxes_data[jbase]);
-                let yy1 = iy1.max(boxes_data[jbase + 1]);
-                let xx2 = ix2.min(boxes_data[jbase + 2]);
-                let yy2 = iy2.min(boxes_data[jbase + 3]);
-                let w = (xx2 - xx1 + bias).max(0.0);
-                let h = (yy2 - yy1 + bias).max(0.0);
+                let xx1 = legacy_max(ix1, boxes_data[jbase]);
+                let yy1 = legacy_max(iy1, boxes_data[jbase + 1]);
+                let xx2 = legacy_min(ix2, boxes_data[jbase + 2]);
+                let yy2 = legacy_min(iy2, boxes_data[jbase + 3]);
+                let w = positive(xx2 - xx1 + bias);
+                let h = positive(yy2 - yy1 + bias);
                 let inter = w * h;
                 let denom = iarea + areas[j] - inter;
                 let overlap = if denom == 0.0 { 0.0 } else { inter / denom };
@@ -120,12 +135,12 @@ pub fn cpu_nms(
                 continue;
             }
             let jb = boxes.row(j);
-            let xx1 = ib[0].max(jb[0]);
-            let yy1 = ib[1].max(jb[1]);
-            let xx2 = ib[2].min(jb[2]);
-            let yy2 = ib[3].min(jb[3]);
-            let w = (xx2 - xx1 + bias).max(0.0);
-            let h = (yy2 - yy1 + bias).max(0.0);
+            let xx1 = legacy_max(ib[0], jb[0]);
+            let yy1 = legacy_max(ib[1], jb[1]);
+            let xx2 = legacy_min(ib[2], jb[2]);
+            let yy2 = legacy_min(ib[3], jb[3]);
+            let w = positive(xx2 - xx1 + bias);
+            let h = positive(yy2 - yy1 + bias);
             let inter = w * h;
             let denom = areas[i] + areas[j] - inter;
             let overlap = if denom == 0.0 { 0.0 } else { inter / denom };
@@ -148,6 +163,10 @@ fn soft_nms_contiguous(
 ) -> Vec<isize> {
     let mut active_n = scores.len();
     let mut inds: Vec<isize> = (0..active_n).map(|idx| idx as isize).collect();
+    let mut areas: Vec<f32> = boxes
+        .chunks_exact(4)
+        .map(|b| (b[2] - b[0] + bias) * (b[3] - b[1] + bias))
+        .collect();
     let mut i = 0usize;
 
     while i < active_n {
@@ -167,6 +186,7 @@ fn soft_nms_contiguous(
             }
             scores.swap(i, maxpos);
             inds.swap(i, maxpos);
+            areas.swap(i, maxpos);
         }
 
         let ibase = i * 4;
@@ -174,7 +194,7 @@ fn soft_nms_contiguous(
         let ty1 = boxes[ibase + 1];
         let tx2 = boxes[ibase + 2];
         let ty2 = boxes[ibase + 3];
-        let selected_area = (tx2 - tx1 + bias) * (ty2 - ty1 + bias);
+        let selected_area = areas[i];
 
         let mut pos = i + 1;
         while pos < active_n {
@@ -184,10 +204,10 @@ fn soft_nms_contiguous(
             let x2 = boxes[base + 2];
             let y2 = boxes[base + 3];
 
-            let area = (x2 - x1 + bias) * (y2 - y1 + bias);
-            let iw = tx2.min(x2) - tx1.max(x1) + bias;
+            let area = areas[pos];
+            let iw = legacy_min(tx2, x2) - legacy_max(tx1, x1) + bias;
             if iw > 0.0 {
-                let ih = ty2.min(y2) - ty1.max(y1) + bias;
+                let ih = legacy_min(ty2, y2) - legacy_max(ty1, y1) + bias;
                 if ih > 0.0 {
                     let inter = iw * ih;
                     let denom = selected_area + area - inter;
@@ -214,6 +234,7 @@ fn soft_nms_contiguous(
                     }
                     scores[pos] = scores[last];
                     inds[pos] = inds[last];
+                    areas[pos] = areas[last];
                 }
                 active_n -= 1;
                 continue;
@@ -238,6 +259,15 @@ fn soft_nms_strided(
 ) -> Vec<isize> {
     let mut active_n = boxes.nrows();
     let mut inds: Vec<isize> = (0..active_n).map(|idx| idx as isize).collect();
+    let mut areas: Vec<f32> = (0..active_n)
+        .map(|idx| {
+            let x1 = boxes[(idx, 0)];
+            let y1 = boxes[(idx, 1)];
+            let x2 = boxes[(idx, 2)];
+            let y2 = boxes[(idx, 3)];
+            (x2 - x1 + bias) * (y2 - y1 + bias)
+        })
+        .collect();
     let mut i = 0usize;
 
     while i < active_n {
@@ -257,13 +287,14 @@ fn soft_nms_strided(
             }
             scores.swap(i, maxpos);
             inds.swap(i, maxpos);
+            areas.swap(i, maxpos);
         }
 
         let tx1 = boxes[(i, 0)];
         let ty1 = boxes[(i, 1)];
         let tx2 = boxes[(i, 2)];
         let ty2 = boxes[(i, 3)];
-        let selected_area = (tx2 - tx1 + bias) * (ty2 - ty1 + bias);
+        let selected_area = areas[i];
 
         let mut pos = i + 1;
         while pos < active_n {
@@ -272,10 +303,10 @@ fn soft_nms_strided(
             let x2 = boxes[(pos, 2)];
             let y2 = boxes[(pos, 3)];
 
-            let area = (x2 - x1 + bias) * (y2 - y1 + bias);
-            let iw = tx2.min(x2) - tx1.max(x1) + bias;
+            let area = areas[pos];
+            let iw = legacy_min(tx2, x2) - legacy_max(tx1, x1) + bias;
             if iw > 0.0 {
-                let ih = ty2.min(y2) - ty1.max(y1) + bias;
+                let ih = legacy_min(ty2, y2) - legacy_max(ty1, y1) + bias;
                 if ih > 0.0 {
                     let inter = iw * ih;
                     let denom = selected_area + area - inter;
@@ -302,6 +333,7 @@ fn soft_nms_strided(
                     }
                     scores[pos] = scores[last];
                     inds[pos] = inds[last];
+                    areas[pos] = areas[last];
                 }
                 active_n -= 1;
                 continue;

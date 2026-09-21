@@ -262,3 +262,70 @@ def test_benchmark_provenance_requires_current_extension(tmp_path, monkeypatch):
     benchmark_json.write_text(json.dumps(payload))
     status = profile._benchmark_provenance(bundle, benchmark_json)
     assert status['ok'] is True
+
+
+def test_perf_workload_hashes_only_after_sampled_loop(monkeypatch):
+    bench = _load_module(BENCH_PATH, '_kwimage_ext_bench_test_perf_digest_scope')
+    spec = bench.CaseSpec('fake_case', 'test', 'test case')
+    calls = []
+
+    def call():
+        calls.append(len(calls))
+        return np.array([len(calls)], dtype=np.int64)
+
+    case = bench.PreparedCase(spec, 'rust', call)
+    monkeypatch.setattr(bench, 'prepare_case', lambda *args, **kwargs: case)
+    clock = iter([0.0, 0.1, 0.2, 0.6])
+    monkeypatch.setattr(bench.time, 'perf_counter', lambda: next(clock))
+    digest_calls = []
+    original_digest = bench._digest_value
+
+    def counted_digest(value):
+        digest_calls.append(value)
+        return original_digest(value)
+
+    monkeypatch.setattr(bench, '_digest_value', counted_digest)
+    payload = bench.run_perf_workload(
+        'fake_case', backend='rust', seconds=0.5, warmup=0)
+    assert payload['calls'] == 2
+    assert len(digest_calls) == 1
+
+
+def test_profile_limits_unrelated_numeric_worker_pools():
+    profile = _load_module(PROFILE_PATH, '_kwimage_ext_profile_test_thread_env')
+    expected = {
+        'OPENBLAS_NUM_THREADS',
+        'OMP_NUM_THREADS',
+        'MKL_NUM_THREADS',
+        'NUMEXPR_NUM_THREADS',
+        'BLIS_NUM_THREADS',
+        'VECLIB_MAXIMUM_THREADS',
+    }
+    assert expected <= set(profile.BENCHMARK_THREAD_ENV)
+    assert all(profile.BENCHMARK_THREAD_ENV[key] == '1' for key in expected)
+
+
+def test_correctness_gate_discovers_fastpath_regressions(tmp_path, monkeypatch):
+    profile = _load_module(PROFILE_PATH, '_kwimage_ext_profile_test_dynamic_tests')
+    seen_commands = []
+
+    def fake_run(command, **kwargs):
+        seen_commands.append(list(command))
+        return {
+            'command': list(command),
+            'returncode': 0,
+            'duration_seconds': 0.0,
+            'stdout': None,
+            'stderr': None,
+        }
+
+    monkeypatch.setattr(profile, '_run', fake_run)
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    status = profile._run_correctness_gate(
+        bundle, [], {}, quick=False, version_state={})
+    assert status['required_passed'] is True
+    command = seen_commands[0]
+    assert 'tests/test_rust_performance_fastpaths.py' in command
+    if (REPO_ROOT / 'tests' / 'test_backend_parity.py').exists():
+        assert 'tests/test_backend_parity.py' in command
