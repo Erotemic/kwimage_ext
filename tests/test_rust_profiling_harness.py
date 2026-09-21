@@ -93,7 +93,13 @@ def test_profile_summary_renders_comparator_ratio(tmp_path):
     profile._write_summary(
         bundle,
         bench_json,
-        {'returncode': 0},
+        {
+            'full': {'returncode': 0},
+            'kernel_without_distribution_metadata_test': None,
+            'metadata_only_failure': False,
+            'required_passed': True,
+            'version_state': {},
+        },
         {'boxes_iou_large': {'stat': 0, 'record': 0}},
     )
     text = (bundle / 'summary.md').read_text()
@@ -160,3 +166,99 @@ def test_quick_rust_microbenchmark_if_extension_is_available():
     assert row['backend'] == 'rust'
     assert row['median_ns'] > 0
     assert row['verification']['digest']
+
+
+
+def test_correctness_gate_allows_only_stale_distribution_metadata(tmp_path, monkeypatch):
+    profile = _load_module(PROFILE_PATH, '_kwimage_ext_profile_test_correctness_classify')
+    results = iter([
+        {
+            'command': ['pytest'],
+            'returncode': 1,
+            'duration_seconds': 1.0,
+            'stdout': None,
+            'stderr': None,
+        },
+        {
+            'command': ['pytest'],
+            'returncode': 0,
+            'duration_seconds': 1.0,
+            'stdout': None,
+            'stderr': None,
+        },
+    ])
+    monkeypatch.setattr(profile, '_run', lambda *args, **kwargs: next(results))
+    version_state = {
+        'source_version': '0.4.1',
+        'package_version': '0.4.1',
+        'rust_extension_version': '0.4.1',
+        'distribution_version': '0.3.2',
+        'source_matches_package': True,
+        'source_matches_extension': True,
+        'distribution_matches_source': False,
+    }
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    status = profile._run_correctness_gate(
+        bundle, [], {}, quick=True, version_state=version_state)
+    assert status['metadata_only_failure'] is True
+    assert status['required_passed'] is True
+    saved = json.loads((bundle / 'correctness' / 'status.json').read_text())
+    assert saved['required_passed'] is True
+
+
+def test_correctness_gate_keeps_kernel_failure_required(tmp_path, monkeypatch):
+    profile = _load_module(PROFILE_PATH, '_kwimage_ext_profile_test_correctness_hard')
+    results = iter([
+        {
+            'command': ['pytest'],
+            'returncode': 1,
+            'duration_seconds': 1.0,
+            'stdout': None,
+            'stderr': None,
+        },
+        {
+            'command': ['pytest'],
+            'returncode': 1,
+            'duration_seconds': 1.0,
+            'stdout': None,
+            'stderr': None,
+        },
+    ])
+    monkeypatch.setattr(profile, '_run', lambda *args, **kwargs: next(results))
+    version_state = {
+        'source_matches_package': True,
+        'source_matches_extension': True,
+        'distribution_matches_source': False,
+    }
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    status = profile._run_correctness_gate(
+        bundle, [], {}, quick=True, version_state=version_state)
+    assert status['metadata_only_failure'] is False
+    assert status['required_passed'] is False
+
+
+def test_benchmark_provenance_requires_current_extension(tmp_path, monkeypatch):
+    profile = _load_module(PROFILE_PATH, '_kwimage_ext_profile_test_provenance')
+    monkeypatch.setattr(profile, '_source_version', lambda: '0.4.1')
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    benchmark_json = tmp_path / 'results.json'
+    benchmark_json.write_text(json.dumps({
+        'environment': {
+            'rust_extension': {
+                'version': '0.4.0',
+                'path': '/tmp/_rust.so',
+                'sha256': 'abc',
+            },
+        },
+        'results': [],
+    }))
+    status = profile._benchmark_provenance(bundle, benchmark_json)
+    assert status['ok'] is False
+    payload = json.loads(benchmark_json.read_text())
+    payload['environment']['rust_extension']['version'] = '0.4.1'
+    benchmark_json.write_text(json.dumps(payload))
+    status = profile._benchmark_provenance(bundle, benchmark_json)
+    assert status['ok'] is True
