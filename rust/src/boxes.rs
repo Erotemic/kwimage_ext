@@ -26,18 +26,68 @@ pub fn bbox_ious_c<'py>(
     let n = boxes.nrows();
     let k = query.nrows();
     let mut out = Array2::<f32>::zeros((n, k));
-    for qi in 0..k {
-        let q = query.row(qi);
-        let qarea = (q[2] - q[0] + bias) * (q[3] - q[1] + bias);
+
+    // The overwhelmingly common case is a standard C-order Nx4 NumPy array.
+    // ndarray's general indexing path must retain dynamic stride and bounds
+    // checks, which are measurable when this loop executes millions of times.
+    // Keep the general strided implementation below, but use flat slices for
+    // standard-layout inputs and write each output row contiguously.
+    if boxes.is_standard_layout() && query.is_standard_layout() {
+        let boxes_data = boxes
+            .as_slice()
+            .expect("standard-layout boxes must expose a contiguous slice");
+        let query_data = query
+            .as_slice()
+            .expect("standard-layout query boxes must expose a contiguous slice");
+        let out_data = out
+            .as_slice_mut()
+            .expect("owned output array must use standard layout");
+
+        let query_areas: Vec<f32> = query_data
+            .chunks_exact(4)
+            .map(|q| (q[2] - q[0] + bias) * (q[3] - q[1] + bias))
+            .collect();
+
         for bi in 0..n {
-            let b = boxes.row(bi);
-            let iw = b[2].min(q[2]) - b[0].max(q[0]) + bias;
-            if iw > 0.0 {
-                let ih = b[3].min(q[3]) - b[1].max(q[1]) + bias;
-                if ih > 0.0 {
-                    let barea = (b[2] - b[0] + bias) * (b[3] - b[1] + bias);
-                    let inter = iw * ih;
-                    out[(bi, qi)] = inter / (qarea + barea - inter);
+            let base = bi * 4;
+            let bx1 = boxes_data[base];
+            let by1 = boxes_data[base + 1];
+            let bx2 = boxes_data[base + 2];
+            let by2 = boxes_data[base + 3];
+            let barea = (bx2 - bx1 + bias) * (by2 - by1 + bias);
+            let out_row = &mut out_data[(bi * k)..((bi + 1) * k)];
+
+            for qi in 0..k {
+                let qbase = qi * 4;
+                let qx1 = query_data[qbase];
+                let qy1 = query_data[qbase + 1];
+                let qx2 = query_data[qbase + 2];
+                let qy2 = query_data[qbase + 3];
+                let iw = bx2.min(qx2) - bx1.max(qx1) + bias;
+                if iw > 0.0 {
+                    let ih = by2.min(qy2) - by1.max(qy1) + bias;
+                    if ih > 0.0 {
+                        let inter = iw * ih;
+                        out_row[qi] = inter / (query_areas[qi] + barea - inter);
+                    }
+                }
+            }
+        }
+    } else {
+        // Preserve support for arbitrary NumPy strided views.
+        for qi in 0..k {
+            let q = query.row(qi);
+            let qarea = (q[2] - q[0] + bias) * (q[3] - q[1] + bias);
+            for bi in 0..n {
+                let b = boxes.row(bi);
+                let iw = b[2].min(q[2]) - b[0].max(q[0]) + bias;
+                if iw > 0.0 {
+                    let ih = b[3].min(q[3]) - b[1].max(q[1]) + bias;
+                    if ih > 0.0 {
+                        let barea = (b[2] - b[0] + bias) * (b[3] - b[1] + bias);
+                        let inter = iw * ih;
+                        out[(bi, qi)] = inter / (qarea + barea - inter);
+                    }
                 }
             }
         }

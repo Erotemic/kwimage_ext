@@ -231,6 +231,24 @@ where
     Rle { h, w, counts }
 }
 
+fn encode_plane_memory_order(h: usize, w: usize, data: &[u8]) -> Rle {
+    debug_assert_eq!(data.len(), h * w);
+    let mut counts = Vec::with_capacity(h * w / 4 + 2);
+    let mut previous = 0u8;
+    let mut count = 0u32;
+    for &pixel in data {
+        let value = if pixel == 0 { 0 } else { 1 };
+        if value != previous {
+            counts.push(count);
+            count = 0;
+            previous = value;
+        }
+        count += 1;
+    }
+    counts.push(count);
+    Rle { h, w, counts }
+}
+
 fn merge_pair(a: &Rle, b: &Rle, intersect: bool) -> Rle {
     if a.h != b.h || a.w != b.w {
         return Rle { h: 0, w: 0, counts: Vec::new() };
@@ -376,9 +394,29 @@ pub fn encode<'py>(
     let shape = arr.shape();
     let (h, w, n) = (shape[0], shape[1], shape[2]);
     let mut result = Vec::with_capacity(n);
-    for i in 0..n {
-        let rle = encode_plane(h, w, |y, x| arr[[y, x, i]]);
-        result.push(rle_to_object(py, &rle)?);
+
+    // COCO masks normally arrive in Fortran order: y is the fastest-moving
+    // coordinate, then x, then the mask index. Reversing the axes turns that
+    // same allocation into a standard-layout (n, w, h) view, which lets us
+    // scan each plane as one contiguous byte slice without per-pixel ndarray
+    // indexing. Arbitrary strided inputs retain the general fallback below.
+    let reversed = arr.view().reversed_axes();
+    if reversed.is_standard_layout() {
+        let data = reversed
+            .as_slice()
+            .expect("standard-layout reversed mask must expose a slice");
+        let plane_size = h * w;
+        for i in 0..n {
+            let start = i * plane_size;
+            let stop = start + plane_size;
+            let rle = encode_plane_memory_order(h, w, &data[start..stop]);
+            result.push(rle_to_object(py, &rle)?);
+        }
+    } else {
+        for i in 0..n {
+            let rle = encode_plane(h, w, |y, x| arr[[y, x, i]]);
+            result.push(rle_to_object(py, &rle)?);
+        }
     }
     Ok(result)
 }
