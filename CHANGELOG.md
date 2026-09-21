@@ -4,7 +4,20 @@ We are currently working on porting this changelog to the specifications in
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Version 0.3.2 - Unreleased
+## Version 0.4.0 - Unreleased
+
+### Changed
+* Opt both GitHub Actions and GitLab CI releases into PyPI Trusted Publishing so release uploads use short-lived OIDC credentials instead of long-lived Twine passwords.
+* Keep the Python and Maturin crate version mirrors synchronized with the PEP 621 package version.
+* Start the 0.4 development line after the Rust-first 0.3.x release series.
+* Let xcookie infer the supported CPython range from the Python 3.10 floor without a hard maximum, enabling CPython 3.15 prerelease CI while continuing to build one `cp310-abi3` wheel per platform.
+* Skip the optional Torch dependency on Python 3.15 until upstream Torch wheels are available there; the supported Rust backend does not require Torch.
+
+### Fixed
+* Keep reusable wheel builds on one native 64-bit artifact per runner; cibuildwheel's `auto` policy otherwise builds both AMD64 and x86 on 64-bit Windows and the x86 wheel cannot be artifact-audited by the x64 CI interpreter.
+* Make Rust-first static type checking understand the dynamically loaded PyO3 assignment backend, avoid importing torch for the intentionally unsupported GPU-NMS compatibility path, and narrowly suppress stale diagnostics in the pre-existing experimental `torch_nms.py` helper.
+
+## Version 0.3.2 - Released 2026-09-20
 
 ### Added
 * Add an installed-release audit that requires all production Rust capabilities, including the COCO assignment grid kernel, checks grid-vs-repeated assignment parity, and emits machine-readable release metadata; include it in the Rust validation bundle.

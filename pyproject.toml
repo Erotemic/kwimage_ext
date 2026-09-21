@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "kwimage_ext"
-version = "0.3.2"
+version = "0.4.0"
 description = "Binary acceleration extensions for kwimage"
 readme = "README.rst"
 requires-python = ">=3.10"
@@ -25,6 +25,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
   "ubelt>=1.3.3",
@@ -42,13 +43,13 @@ tests = [
   "pytest-cov>=3.0.0",
   "coverage>=6.1.1",
 ]
-optional = ["torch>=1.11.0"]
+optional = ["torch>=1.11.0; python_version < '3.15'"]
 all = [
   "xdoctest>=1.1.5",
   "pytest>=6.2.5",
   "pytest-cov>=3.0.0",
   "coverage>=6.1.1",
-  "torch>=1.11.0",
+  "torch>=1.11.0; python_version < '3.15'",
 ]
 
 # Keep generated CI extra names valid during the Rust transition.
@@ -60,13 +61,13 @@ tests-strict = [
   "pytest-cov>=3.0.0",
   "coverage>=6.1.1",
 ]
-optional-strict = ["torch>=1.11.0"]
+optional-strict = ["torch>=1.11.0; python_version < '3.15'"]
 all-strict = [
   "xdoctest>=1.1.5",
   "pytest>=6.2.5",
   "pytest-cov>=3.0.0",
   "coverage>=6.1.1",
-  "torch>=1.11.0",
+  "torch>=1.11.0; python_version < '3.15'",
 ]
 
 [project.urls]
@@ -95,9 +96,8 @@ dev_status = "alpha"
 min_python = "3.10"
 url = 'https://gitlab.kitware.com/computer-vision/kwimage_ext'
 github_url = "https://github.com/Erotemic/kwimage_ext"
-max_python = "3.14"
-ci_cpython_versions = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 ci_reusable_wheels = true
+ci_pypi_trusted_publishing = ["github", "gitlab"]
 ci_wheel_build_post_commands = ["python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl"]
 
 [tool.xcookie.test_env]
@@ -113,12 +113,19 @@ commands = ["./dev/check_backend_parity.sh"]
 # platform and exercise that same artifact on every supported Python >= 3.10.
 build = "cp310-*"
 skip = "pp* *-musllinux_*"
-archs = ["auto"]
+archs = ["auto64"]
 build-verbosity = 1
 manylinux-x86_64-image = "manylinux2014"
 
 [tool.mypy]
 ignore_missing_imports = true
+
+[[tool.ty.overrides]]
+include = ["kwimage_ext/algo/_nms_backend/torch_nms.py"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+unresolved-attribute = "ignore"
 
 [tool.pytest.ini_options]
 addopts = "-p no:doctest --xdoctest --xdoctest-style=google --ignore-glob=setup.py"

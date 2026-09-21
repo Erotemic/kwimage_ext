@@ -3,10 +3,6 @@ Python frontend for binary backends with tests
 """
 # import numpy as np
 # import warnings
-try:
-    import torch
-except Exception:
-    torch = None
 
 
 # class _NMS_Impls():
@@ -82,11 +78,9 @@ def cython_gpu_gtms(ltrb, scores, thresh, bias=0.0, device_id=None):
         >>> assert set(keep) == {6, 4, 3, 1}
     """
     from kwimage_ext.algo._nms_backend import gpu_nms
-    # TODO: if the data is already on a torch GPU can we just
-    # use it?
-    # HACK: we should parameterize which device is used
-    if device_id is None:
-        device_id = torch.cuda.current_device()
+    # The Rust rewrite intentionally does not provide GPU NMS.  Delegate to
+    # the compatibility stub so callers get the explicit NotImplementedError
+    # instead of failing earlier because optional torch is absent.
     keep = gpu_nms.gpu_nms(ltrb, scores, float(thresh), bias=float(bias),
                            device_id=device_id)
     return keep

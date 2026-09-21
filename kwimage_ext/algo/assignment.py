@@ -7,23 +7,26 @@ remain owned by the caller.
 """
 from __future__ import annotations
 
+import importlib
+from typing import Any
+
 import numpy as np
 
 
-def _rust_backend():
+def _rust_backend() -> Any:
     try:
-        from kwimage_ext import _rust
+        rust = importlib.import_module('kwimage_ext._rust')
     except ImportError as ex:  # pragma: no cover - exercised by downstream fallback
         raise ImportError(
             'kwimage_ext Rust assignment support is unavailable. Install a '
             'Rust-enabled kwimage_ext wheel or use the caller\'s Python fallback.'
         ) from ex
-    if not hasattr(_rust, 'coco_greedy_match'):
+    if not hasattr(rust, 'coco_greedy_match'):
         raise ImportError(
             'The installed kwimage_ext Rust backend predates the '
             'coco_greedy_match capability.'
         )
-    return _rust
+    return rust
 
 
 def backend_metadata():
