@@ -38,6 +38,13 @@ def test_ci_uses_xcookie_native_reusable_wheel_contract():
     assert 'ci_cpython_versions =' not in pyproject_text
     assert 'ci_reusable_wheels = true' in pyproject_text
     assert 'archs = ["auto64"]' in pyproject_text
+    assert 'skip = "pp*"' in pyproject_text
+    assert '*-musllinux_*' not in pyproject_text
+    assert 'manylinux-aarch64-image = "manylinux2014"' in pyproject_text
+    assert 'test-command = "python -c' in pyproject_text
+    assert '[tool.cibuildwheel.macos.environment]' in pyproject_text
+    assert 'MACOSX_DEPLOYMENT_TARGET = "10.12"' in pyproject_text
+    assert "command -v apk" in pyproject_text
     assert 'github_url = "https://github.com/Erotemic/kwimage_ext"' in pyproject_text
     assert 'KWIMAGE_EXT_FORCE_RUST = "1"' in pyproject_text
     assert 'python dev/validate_wheel_artifact.py wheelhouse/kwimage_ext*.whl' in pyproject_text
@@ -144,6 +151,9 @@ def test_release_validation_is_artifact_isolated():
     assert "'--target'" in validator
     assert "'--require-install-root'" in validator
     assert "PYTHONNOUSERSITE" in validator
+    assert 'parse_wheel_filename' in validator
+    assert "'runtime_validation': 'cibuildwheel-container'" in validator
+    assert "data['runtime_validation'] = 'isolated-host-install'" in validator
     assert 'path.is_relative_to(root)' in audit
     assert 'artifact_isolated' in audit
     assert 'rm -rf wheelhouse' in build_script
