@@ -319,7 +319,7 @@ jobs:
         check-latest: ${{ matrix.check-latest }}
       id: setup_python
       continue-on-error: ${{ matrix.experimental || false }}
-    - uses: actions/download-artifact@v7.0.0
+    - uses: actions/download-artifact@v8.0.1
       name: Download wheel for this platform
       with:
         name: wheels-${{ matrix.os }}-${{ matrix.arch }}
