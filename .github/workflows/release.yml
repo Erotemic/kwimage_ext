@@ -61,7 +61,7 @@ jobs:
           arch: auto
     steps:
     - name: Checkout source
-      uses: actions/checkout@v6.0.2
+      uses: actions/checkout@v7.0.1
     - name: Build binary wheels
       uses: pypa/cibuildwheel@v4.1.1
       with:
@@ -96,7 +96,7 @@ jobs:
     - build_binpy_wheels
     steps:
     - name: Checkout source
-      uses: actions/checkout@v6.0.2
+      uses: actions/checkout@v7.0.1
     - uses: actions/download-artifact@v7.0.0
       name: Download wheels
       with:
@@ -184,7 +184,7 @@ jobs:
     - build_binpy_wheels
     steps:
     - name: Checkout source
-      uses: actions/checkout@v6.0.2
+      uses: actions/checkout@v7.0.1
     - uses: actions/download-artifact@v7.0.0
       name: Download wheels
       with:
@@ -273,7 +273,7 @@ jobs:
     - live_deploy
     steps:
     - name: Checkout source
-      uses: actions/checkout@v6.0.2
+      uses: actions/checkout@v7.0.1
     - uses: actions/download-artifact@v7.0.0
       name: Download artifacts
       with:
