@@ -7,6 +7,12 @@
 name: BinPyRelease
 
 on:
+  # MAINTAINER INTENT: pushes to the default branch intentionally enter
+  # this release workflow. With deployment enabled, test_deploy publishes
+  # those artifacts to TestPyPI so every mainline merge exercises the
+  # release packaging/signing/trusted-publishing path before promotion.
+  # Do not make TestPyPI manual-only or remove the default-branch trigger
+  # unless intentionally changing that release policy.
   push:
     branches: [ main, release ]
   workflow_dispatch:
@@ -30,17 +36,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Release wheel coverage is deliberately broader than the ordinary test-wheel
+        # matrix. Every configured desktop OS must emit the modern native architectures
+        # we publish: Linux x86_64 and ARM64, macOS Apple Silicon and Intel, and Windows
+        # x86_64. Linux cibuildwheel selectors may emit both manylinux and musllinux
+        # artifacts from each native runner. Keep every entry required: TestPyPI/PyPI
+        # deploy jobs depend on this entire build job so a missing architecture fails
+        # closed instead of publishing a partial wheel set.
+
         # One built wheel per platform is reusable across the configured CPython test
         # versions. This covers both version-independent wheels (e.g. py3-none) and
         # stable-ABI wheels (e.g. cp310-abi3). The concrete build selector is project
         # packaging policy in [tool.cibuildwheel].build.
-        os:
-        - ubuntu-latest
-        - macOS-latest
-        - macos-15-intel
-        - windows-latest
-        arch:
-        - auto
+        include:
+        - os: ubuntu-latest
+          arch: auto
+        - os: ubuntu-24.04-arm
+          arch: auto
+        - os: macos-15
+          arch: auto
+        - os: macos-15-intel
+          arch: auto
+        - os: windows-latest
+          arch: auto
     steps:
     - name: Checkout source
       uses: actions/checkout@v6.0.2
@@ -52,6 +70,8 @@ jobs:
       env:
         CIBW_ARCHS_LINUX: ${{ matrix.arch }}
         PYTHONUTF8: '1'
+        CIBW_ARCHS_WINDOWS: auto64
+        CIBW_ARCHS_MACOS: auto64
         CIBW_ENABLE: cpython-prerelease
     - name: Show built files
       shell: bash
@@ -340,7 +360,8 @@ jobs:
 #
 #        - testpypi:
 #            * environment name: testpypi
-#            * use only for explicit workflow_dispatch TestPyPI probes
+#            * used automatically for default-branch packaging smoke tests
+#              and optionally for explicit workflow_dispatch probes
 #            * usually no manual approval is needed
 #            * this environment is never part of a live release push
 #
