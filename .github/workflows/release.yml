@@ -8,7 +8,7 @@ name: BinPyRelease
 
 on:
   push:
-    branches: [ release ]
+    branches: [ main, release ]
   workflow_dispatch:
     inputs:
       publish_target:
@@ -71,7 +71,7 @@ jobs:
   test_deploy:
     name: Deploy Test
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'testpypi'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'testpypi')
     needs:
     - build_binpy_wheels
     steps:
