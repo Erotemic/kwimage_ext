@@ -4,7 +4,10 @@ We are currently working on porting this changelog to the specifications in
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Version 0.4.0 - Unreleased
+## Version 0.4.1 - Unreleased
+
+
+## Version 0.4.0 - Released 2026-09-21
 
 ### Changed
 * Opt both GitHub Actions and GitLab CI releases into PyPI Trusted Publishing so release uploads use short-lived OIDC credentials instead of long-lived Twine passwords.
