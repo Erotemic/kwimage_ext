@@ -38,23 +38,43 @@ fn counts_to_bytes(counts: &[u32]) -> Vec<u8> {
     out
 }
 
-fn bytes_to_counts(bytes: &[u8]) -> PyResult<Vec<u32>> {
-    let mut counts: Vec<u32> = Vec::new();
-    let mut p = 0usize;
-    while p < bytes.len() && bytes[p] != 0 {
+struct CompressedCounts<'a> {
+    bytes: &'a [u8],
+    p: usize,
+    index: usize,
+    previous_same_parity: [u32; 2],
+}
+
+impl<'a> CompressedCounts<'a> {
+    #[inline]
+    fn new(bytes: &'a [u8]) -> Self {
+        Self {
+            bytes,
+            p: 0,
+            index: 0,
+            previous_same_parity: [0; 2],
+        }
+    }
+
+    #[inline]
+    fn next_count(&mut self) -> PyResult<Option<u32>> {
+        if self.p >= self.bytes.len() || self.bytes[self.p] == 0 {
+            return Ok(None);
+        }
+
         let mut x: i64 = 0;
         let mut k = 0usize;
         loop {
-            if p >= bytes.len() {
+            if self.p >= self.bytes.len() {
                 return Err(value_error("truncated compressed RLE counts"));
             }
-            let c = (bytes[p] as i64) - 48;
+            let c = (self.bytes[self.p] as i64) - 48;
             if !(0..=63).contains(&c) {
                 return Err(value_error("invalid compressed RLE character"));
             }
             x |= (c & 0x1f) << (5 * k);
             let more = c & 0x20;
-            p += 1;
+            self.p += 1;
             k += 1;
             if more == 0 {
                 if c & 0x10 != 0 {
@@ -63,13 +83,30 @@ fn bytes_to_counts(bytes: &[u8]) -> PyResult<Vec<u32>> {
                 break;
             }
         }
-        if counts.len() > 2 {
-            x += counts[counts.len() - 2] as i64;
+
+        let parity = self.index & 1;
+        if self.index > 2 {
+            x += self.previous_same_parity[parity] as i64;
         }
         if x < 0 || x > u32::MAX as i64 {
             return Err(value_error("compressed RLE decoded outside uint32 range"));
         }
-        counts.push(x as u32);
+
+        let count = x as u32;
+        self.previous_same_parity[parity] = count;
+        self.index += 1;
+        Ok(Some(count))
+    }
+}
+
+fn bytes_to_counts(bytes: &[u8]) -> PyResult<Vec<u32>> {
+    // COCO's C decoder allocates one uint per input byte, which is an exact
+    // upper bound because each decoded count consumes at least one byte. Do
+    // the same here so fragmented masks do not repeatedly grow the vector.
+    let mut counts = Vec::with_capacity(bytes.len());
+    let mut decoder = CompressedCounts::new(bytes);
+    while let Some(count) = decoder.next_count()? {
+        counts.push(count);
     }
     Ok(counts)
 }
@@ -86,27 +123,45 @@ fn rle_to_object(py: Python<'_>, rle: &Rle) -> PyResult<PyObject> {
     rle_bytes_to_object(py, rle.h, rle.w, &counts)
 }
 
-fn extract_count_bytes(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
+fn with_count_bytes<T>(
+    obj: &Bound<'_, PyAny>,
+    f: impl FnOnce(&[u8]) -> PyResult<T>,
+) -> PyResult<T> {
     if let Ok(b) = obj.downcast::<PyBytes>() {
-        return Ok(b.as_bytes().to_vec());
+        return f(b.as_bytes());
     }
     if let Ok(s) = obj.extract::<String>() {
-        return Ok(s.into_bytes());
+        return f(s.as_bytes());
     }
     Err(value_error("compressed RLE counts must be bytes or str"))
 }
 
-fn rle_from_object(obj: &Bound<'_, PyAny>) -> PyResult<Rle> {
-    let d = obj.downcast::<PyDict>()?;
+fn rle_dimensions(d: &Bound<'_, PyDict>) -> PyResult<(usize, usize)> {
     let size_obj = d.get_item("size")?.ok_or_else(|| value_error("RLE missing size"))?;
-    let counts_obj = d.get_item("counts")?.ok_or_else(|| value_error("RLE missing counts"))?;
+
+    // `encode()` and pycocotools both use an ordinary two-element Python
+    // list. Avoid allocating a temporary Vec for that overwhelmingly common
+    // path while retaining the old generic sequence extraction as fallback.
+    if let Ok(size) = size_obj.downcast::<PyList>() {
+        if size.len() != 2 {
+            return Err(value_error("RLE size must contain [height, width]"));
+        }
+        return Ok((size.get_item(0)?.extract()?, size.get_item(1)?.extract()?));
+    }
+
     let size: Vec<usize> = size_obj.extract()?;
     if size.len() != 2 {
         return Err(value_error("RLE size must contain [height, width]"));
     }
-    let bytes = extract_count_bytes(&counts_obj)?;
-    let counts = bytes_to_counts(&bytes)?;
-    Ok(Rle { h: size[0], w: size[1], counts })
+    Ok((size[0], size[1]))
+}
+
+fn rle_from_object(obj: &Bound<'_, PyAny>) -> PyResult<Rle> {
+    let d = obj.downcast::<PyDict>()?;
+    let counts_obj = d.get_item("counts")?.ok_or_else(|| value_error("RLE missing counts"))?;
+    let (h, w) = rle_dimensions(d)?;
+    let counts = with_count_bytes(&counts_obj, bytes_to_counts)?;
+    Ok(Rle { h, w, counts })
 }
 
 fn rles_from_list(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Rle>> {
@@ -116,6 +171,23 @@ fn rles_from_list(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Rle>> {
 
 fn area_one(rle: &Rle) -> u32 {
     rle.counts.iter().skip(1).step_by(2).copied().sum()
+}
+
+#[inline]
+fn compressed_area(bytes: &[u8]) -> PyResult<u32> {
+    // `area` only needs foreground (odd-indexed) run lengths. Streaming the
+    // compressed counts avoids both copying the Python bytes object and
+    // allocating/decompressing a temporary Vec<u32> for every mask.
+    let mut decoder = CompressedCounts::new(bytes);
+    let mut index = 0usize;
+    let mut area = 0u32;
+    while let Some(count) = decoder.next_count()? {
+        if index & 1 != 0 {
+            area = area.wrapping_add(count);
+        }
+        index += 1;
+    }
+    Ok(area)
 }
 
 fn bbox_one(rle: &Rle) -> [f64; 4] {
@@ -253,6 +325,14 @@ fn push_compressed_count(
     }
     previous_same_parity[parity] = count;
 
+    // The common case for random/sparse masks is a small same-parity delta.
+    // Values in [-16, 15] fit in exactly one COCO compressed byte. Avoid the
+    // general signed-LEB-style loop for that hot path.
+    if (-16..=15).contains(&x) {
+        out.push(((x & 0x1f) as u8) + 48);
+        return;
+    }
+
     loop {
         let mut c = (x & 0x1f) as u8;
         x >>= 5;
@@ -348,8 +428,9 @@ fn prefer_long_run_encode(data: &[u8]) -> bool {
     let window_len = data.len().min(SAMPLE_WINDOW);
     let num_windows = if data.len() <= window_len { 1 } else { SAMPLE_WINDOWS };
     let span = data.len() - window_len;
+    let total_comparisons = num_windows * (window_len - 1);
+    let max_long_run_transitions = total_comparisons / LOW_TRANSITION_DENOMINATOR;
     let mut transitions = 0usize;
-    let mut comparisons = 0usize;
 
     for window_index in 0..num_windows {
         let start = if num_windows == 1 {
@@ -365,8 +446,15 @@ fn prefer_long_run_encode(data: &[u8]) -> bool {
         let mut previous = first != 0;
         for &pixel in iter {
             let value = pixel != 0;
-            transitions += usize::from(value != previous);
-            comparisons += 1;
+            if value != previous {
+                transitions += 1;
+                // This is an exact early reject, not a heuristic change. Once
+                // the final threshold has been exceeded, no remaining sample
+                // can make the classifier return true.
+                if transitions > max_long_run_transitions {
+                    return false;
+                }
+            }
             previous = value;
         }
     }
@@ -375,7 +463,7 @@ fn prefer_long_run_encode(data: &[u8]) -> bool {
     // of large structured runs, while sparse-random and dense-random masks are
     // comfortably above this threshold.  A wrong prediction only affects
     // performance; both paths have identical output semantics.
-    transitions * LOW_TRANSITION_DENOMINATOR <= comparisons
+    true
 }
 
 fn encode_plane_bytes_long_runs(h: usize, w: usize, data: &[u8]) -> Vec<u8> {
@@ -452,38 +540,53 @@ fn encode_plane_bytes_memory_order(h: usize, w: usize, data: &[u8]) -> Vec<u8> {
     out
 }
 
-fn merge_pair(a: &Rle, b: &Rle, intersect: bool) -> Rle {
-    if a.h != b.h || a.w != b.w {
-        return Rle { h: 0, w: 0, counts: Vec::new() };
+fn merge_counts_with_compressed(
+    a: &[u32],
+    b_bytes: &[u8],
+    intersect: bool,
+    out: &mut Vec<u32>,
+) -> PyResult<()> {
+    out.clear();
+    // The merged run count cannot exceed the sum of input run counts. We do
+    // not know the compressed input's decoded length without scanning it, but
+    // its byte length is an upper bound and gives a useful one-time reserve.
+    let required_capacity = a.len().saturating_add(b_bytes.len());
+    if out.capacity() < required_capacity {
+        out.reserve(required_capacity);
     }
+
     let mut ia = 1usize;
-    let mut ib = 1usize;
-    let mut ca = *a.counts.get(0).unwrap_or(&0);
-    let mut cb = *b.counts.get(0).unwrap_or(&0);
+    let mut ca = *a.get(0).unwrap_or(&0);
+    let mut b_decoder = CompressedCounts::new(b_bytes);
+    let mut cb = b_decoder.next_count()?.unwrap_or(0);
+    let mut b_done = b_bytes.is_empty() || b_bytes[0] == 0;
     let mut va = false;
     let mut vb = false;
     let mut out_value = false;
     let mut run = 0u32;
-    let mut counts = Vec::new();
     loop {
         let c = ca.min(cb);
         run = run.saturating_add(c);
         ca -= c;
         cb -= c;
-        if ca == 0 && ia < a.counts.len() {
-            ca = a.counts[ia];
+        if ca == 0 && ia < a.len() {
+            ca = a[ia];
             ia += 1;
             va = !va;
         }
-        if cb == 0 && ib < b.counts.len() {
-            cb = b.counts[ib];
-            ib += 1;
-            vb = !vb;
+        if cb == 0 && !b_done {
+            match b_decoder.next_count()? {
+                Some(next) => {
+                    cb = next;
+                    vb = !vb;
+                }
+                None => b_done = true,
+            }
         }
         let next_value = if intersect { va && vb } else { va || vb };
-        let done = ca == 0 && cb == 0 && ia >= a.counts.len() && ib >= b.counts.len();
+        let done = ca == 0 && cb == 0 && ia >= a.len() && b_done;
         if next_value != out_value || done {
-            counts.push(run);
+            out.push(run);
             run = 0;
             out_value = next_value;
         }
@@ -491,7 +594,7 @@ fn merge_pair(a: &Rle, b: &Rle, intersect: bool) -> Rle {
             break;
         }
     }
-    Rle { h: a.h, w: a.w, counts }
+    Ok(())
 }
 
 fn polygon_to_rle(poly: &[f64], h: usize, w: usize) -> Rle {
@@ -674,17 +777,39 @@ pub fn merge(
     rle_objs: &Bound<'_, PyAny>,
     intersect: i32,
 ) -> PyResult<PyObject> {
-    let rles = rles_from_list(rle_objs)?;
-    let out = if rles.is_empty() {
-        Rle { h: 0, w: 0, counts: Vec::new() }
-    } else {
-        let mut acc = rles[0].clone();
-        for other in rles.iter().skip(1) {
-            acc = merge_pair(&acc, other, intersect != 0);
+    let list = rle_objs.downcast::<PyList>()?;
+    if list.len() == 0 {
+        return rle_to_object(py, &Rle { h: 0, w: 0, counts: Vec::new() });
+    }
+
+    let first = list.get_item(0)?;
+    let first_dict = first.downcast::<PyDict>()?;
+    let (h, w) = rle_dimensions(first_dict)?;
+    let first_counts_obj = first_dict
+        .get_item("counts")?
+        .ok_or_else(|| value_error("RLE missing counts"))?;
+    let mut acc = with_count_bytes(&first_counts_obj, bytes_to_counts)?;
+
+    // Reuse two run buffers through the entire reduction. In particular, do
+    // not materialize every input RLE and do not allocate a fresh result Vec
+    // for each pairwise merge.
+    let mut scratch = Vec::<u32>::new();
+    for item in list.iter().skip(1) {
+        let d = item.downcast::<PyDict>()?;
+        let (other_h, other_w) = rle_dimensions(d)?;
+        if other_h != h || other_w != w {
+            return rle_to_object(py, &Rle { h: 0, w: 0, counts: Vec::new() });
         }
-        acc
-    };
-    rle_to_object(py, &out)
+        let counts_obj = d
+            .get_item("counts")?
+            .ok_or_else(|| value_error("RLE missing counts"))?;
+        with_count_bytes(&counts_obj, |bytes| {
+            merge_counts_with_compressed(&acc, bytes, intersect != 0, &mut scratch)
+        })?;
+        std::mem::swap(&mut acc, &mut scratch);
+    }
+
+    rle_to_object(py, &Rle { h, w, counts: acc })
 }
 
 #[pyfunction]
@@ -692,8 +817,18 @@ pub fn area<'py>(
     py: Python<'py>,
     rle_objs: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyArray1<u32>>> {
-    let rles = rles_from_list(rle_objs)?;
-    let values: Vec<u32> = rles.iter().map(area_one).collect();
+    let list = rle_objs.downcast::<PyList>()?;
+    let mut values = Vec::with_capacity(list.len());
+    for item in list.iter() {
+        let d = item.downcast::<PyDict>()?;
+        // Preserve the existing validation that every RLE has a two-element
+        // size, even though area itself does not use the dimensions.
+        let _ = rle_dimensions(d)?;
+        let counts_obj = d
+            .get_item("counts")?
+            .ok_or_else(|| value_error("RLE missing counts"))?;
+        values.push(with_count_bytes(&counts_obj, compressed_area)?);
+    }
     Ok(Array1::from_vec(values).into_pyarray_bound(py))
 }
 

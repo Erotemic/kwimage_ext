@@ -38,6 +38,10 @@ DEFAULT_PERF_CASES = (
     'mask_encode_sparse_128x128x16',
     'mask_encode_512x512x4',
     'mask_encode_structured_512x512x4',
+    'mask_area_structured_256x256x32',
+    'mask_area_fragmented_256x256x32',
+    'mask_merge_structured_256x256x32',
+    'mask_merge_fragmented_256x256x32',
     'mask_iou_fragmented_48',
     'assignment_sparse',
 )

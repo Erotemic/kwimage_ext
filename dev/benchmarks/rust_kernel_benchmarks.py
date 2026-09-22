@@ -132,10 +132,12 @@ CASE_SPECS = (
     CaseSpec(
         'mask_area_structured_256x256x32', 'mask',
         'Area of 32 structured 256 x 256 COCO RLE masks; low-run-count workload.',
+        perf_default=True,
     ),
     CaseSpec(
         'mask_area_fragmented_256x256x32', 'mask',
         'Area of 32 fragmented 256 x 256 COCO RLE masks; high-run-count workload.',
+        perf_default=True,
     ),
     CaseSpec(
         'mask_tobbox_structured_256x256x32', 'mask',
@@ -148,10 +150,12 @@ CASE_SPECS = (
     CaseSpec(
         'mask_merge_structured_256x256x32', 'mask',
         'Union of 32 structured 256 x 256 COCO RLE masks.',
+        perf_default=True,
     ),
     CaseSpec(
         'mask_merge_fragmented_256x256x32', 'mask',
         'Union of 32 fragmented 256 x 256 COCO RLE masks.',
+        perf_default=True,
     ),
     CaseSpec(
         'mask_iou_fragmented_48', 'mask',
