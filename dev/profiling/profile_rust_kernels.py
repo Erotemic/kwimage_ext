@@ -210,6 +210,10 @@ def _snapshot_source(bundle):
         REPO_ROOT / 'dev' / 'profiling' / 'profile_rust_kernels.py',
     ]
     paths.extend(sorted((REPO_ROOT / 'rust' / 'src').glob('*.rs')))
+    paths.extend(sorted((REPO_ROOT / 'tests').glob('test_rust_*.py')))
+    backend_parity = REPO_ROOT / 'tests' / 'test_backend_parity.py'
+    if backend_parity.exists():
+        paths.append(backend_parity)
     for src in paths:
         if not src.exists():
             continue
@@ -498,7 +502,8 @@ def _write_benchmark_csv(bundle, benchmark_json):
         'case', 'family', 'backend', 'samples', 'loops_per_sample',
         'median_ns', 'mean_ns', 'min_ns', 'p05_ns', 'p95_ns', 'max_ns',
         'stdev_ns', 'work_items', 'work_unit', 'median_ns_per_work_item',
-        'result_digest', 'verification_comparator', 'verification_digest',
+        'result_digest', 'verification_comparator',
+        'verification_comparators', 'verification_digest', 'traits_json',
     ]
     out = bundle / 'benchmarks' / 'results.csv'
     with out.open('w', newline='') as file:
@@ -508,8 +513,89 @@ def _write_benchmark_csv(bundle, benchmark_json):
             verification = row.get('verification', {})
             flat = {key: row.get(key) for key in columns}
             flat['verification_comparator'] = verification.get('comparator')
+            flat['verification_comparators'] = json.dumps(
+                verification.get('comparators', []), sort_keys=True)
             flat['verification_digest'] = verification.get('digest')
+            flat['traits_json'] = json.dumps(row.get('traits', {}), sort_keys=True)
             writer.writerow(flat)
+
+
+
+def _comparison_band(ratio):
+    """Describe an observed median ratio without claiming significance."""
+    if ratio <= 0.95:
+        return 'faster_by_at_least_5pct'
+    if ratio >= 1.05:
+        return 'slower_by_at_least_5pct'
+    return 'within_5pct'
+
+
+def _comparison_rows(payload):
+    by_case = {}
+    for row in payload.get('results', []):
+        by_case.setdefault(row['case'], {})[row['backend']] = row
+
+    rows = []
+    comparator_order = ('legacy', 'pycocotools', 'python')
+    for case in [row['case'] for row in payload.get('results', []) if row['backend'] == 'rust']:
+        backend_rows = by_case[case]
+        rust = backend_rows.get('rust')
+        if rust is None:
+            continue
+        for comparator_name in comparator_order:
+            comparator = backend_rows.get(comparator_name)
+            if comparator is None:
+                continue
+            ratio = rust['median_ns'] / comparator['median_ns']
+            rows.append({
+                'case': case,
+                'family': rust.get('family'),
+                'comparator': comparator_name,
+                'rust_median_ns': rust['median_ns'],
+                'comparator_median_ns': comparator['median_ns'],
+                'rust_over_comparator': ratio,
+                'observed_band': _comparison_band(ratio),
+                'rust_p05_ns': rust.get('p05_ns'),
+                'rust_p95_ns': rust.get('p95_ns'),
+                'comparator_p05_ns': comparator.get('p05_ns'),
+                'comparator_p95_ns': comparator.get('p95_ns'),
+                'traits': rust.get('traits', {}),
+            })
+    return rows
+
+
+def _write_comparison_outputs(bundle, benchmark_json):
+    if not benchmark_json.exists():
+        return []
+    payload = json.loads(benchmark_json.read_text())
+    rows = _comparison_rows(payload)
+    out_json = bundle / 'benchmarks' / 'comparisons.json'
+    out_json.write_text(json.dumps({
+        'schema_version': 1,
+        'interpretation': {
+            'faster_by_at_least_5pct': 'rust/comparator <= 0.95',
+            'within_5pct': '0.95 < rust/comparator < 1.05',
+            'slower_by_at_least_5pct': 'rust/comparator >= 1.05',
+            'note': 'Bands describe observed medians; they are not statistical significance tests.',
+        },
+        'rows': rows,
+    }, indent=2, sort_keys=True) + '\n')
+
+    out_csv = bundle / 'benchmarks' / 'comparisons.csv'
+    columns = [
+        'case', 'family', 'comparator', 'rust_median_ns',
+        'comparator_median_ns', 'rust_over_comparator', 'observed_band',
+        'rust_p05_ns', 'rust_p95_ns', 'comparator_p05_ns',
+        'comparator_p95_ns', 'traits_json',
+    ]
+    with out_csv.open('w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=columns)
+        writer.writeheader()
+        for row in rows:
+            flat = {key: row.get(key) for key in columns}
+            flat['traits_json'] = json.dumps(row.get('traits', {}), sort_keys=True)
+            writer.writerow(flat)
+    return rows
 
 
 def _profile_command(case, seconds):
@@ -649,40 +735,62 @@ def _write_summary(bundle, benchmark_json, correctness_result, perf_results):
                 '- Re-run with `--rebuild-profiled` before using these numbers to optimize this checkout.',
                 '',
             ])
-        results = payload.get('results', [])
-        by_case = {}
-        for row in results:
-            by_case.setdefault(row['case'], {})[row['backend']] = row
+        comparison_rows = _comparison_rows(payload)
+        pycoco_version = (
+            payload.get('environment', {})
+            .get('optional_backend_versions', {})
+            .get('pycocotools')
+        )
         lines.extend([
+            '## Comparator availability',
+            '',
+            f'- pycocotools: `{pycoco_version}`' if pycoco_version else '- pycocotools: unavailable; no direct pycocotools performance claim can be made from this bundle.',
+            '',
             '## Microbenchmarks',
             '',
-            '| case | rust median us | comparator | comparator median us | rust/comparator | rust ns/work item |',
-            '| --- | ---: | --- | ---: | ---: | ---: |',
+            '| case | rust median us | comparator | comparator median us | rust/comparator | observed band |',
+            '| --- | ---: | --- | ---: | ---: | --- |',
         ])
-        for case, backend_rows in by_case.items():
-            rust = backend_rows.get('rust')
-            if rust is None:
-                continue
-            comparator_name = ''
-            comparator = None
-            for name in ('legacy', 'python'):
-                if name in backend_rows:
-                    comparator_name = name
-                    comparator = backend_rows[name]
-                    break
-            if comparator:
-                ratio = rust['median_ns'] / comparator['median_ns']
-                comp_us = _format_us(comparator['median_ns'])
-                ratio_text = f'{ratio:.3f}x'
-            else:
-                comp_us = ''
-                ratio_text = ''
-            ns_item = rust.get('median_ns_per_work_item')
-            ns_item_text = f'{ns_item:.4f}' if ns_item is not None else ''
+        for row in comparison_rows:
             lines.append(
-                f'| `{case}` | {_format_us(rust["median_ns"])} | {comparator_name} | '
-                f'{comp_us} | {ratio_text} | {ns_item_text} |')
-        lines.extend(['', 'Lower `rust/comparator` is faster.', ''])
+                f'| `{row["case"]}` | {_format_us(row["rust_median_ns"])} | '
+                f'{row["comparator"]} | {_format_us(row["comparator_median_ns"])} | '
+                f'{row["rust_over_comparator"]:.3f}x | {row["observed_band"]} |')
+        if not comparison_rows:
+            lines.append('| _no comparator rows available_ | | | | | |')
+        lines.extend([
+            '',
+            'Lower `rust/comparator` is faster.',
+            'The ±5% band is a conservative descriptive tolerance around observed medians, not a significance test.',
+            '',
+            '## Comparator coverage',
+            '',
+        ])
+        for comparator in ('legacy', 'pycocotools', 'python'):
+            rows = [row for row in comparison_rows if row['comparator'] == comparator]
+            if not rows:
+                continue
+            counts = {
+                band: sum(row['observed_band'] == band for row in rows)
+                for band in (
+                    'faster_by_at_least_5pct',
+                    'within_5pct',
+                    'slower_by_at_least_5pct',
+                )
+            }
+            worst = max(rows, key=lambda row: row['rust_over_comparator'])
+            lines.append(
+                f'- `{comparator}`: {len(rows)} compared cases; '
+                f'{counts["faster_by_at_least_5pct"]} >=5% faster, '
+                f'{counts["within_5pct"]} within 5%, '
+                f'{counts["slower_by_at_least_5pct"]} >=5% slower. '
+                f'Highest observed rust/comparator ratio: '
+                f'`{worst["rust_over_comparator"]:.3f}x` on `{worst["case"]}`.')
+        lines.extend([
+            '',
+            'Any performance statement should be scoped to this recorded benchmark matrix and machine/toolchain.',
+            '',
+        ])
     lines.extend(['## perf collection', ''])
     if not perf_results:
         lines.append('- perf: skipped or unavailable')
@@ -695,6 +803,7 @@ def _write_summary(bundle, benchmark_json, correctness_result, perf_results):
         '## Important provenance',
         '',
         '- `benchmarks/results.json` records the exact imported Rust extension path and SHA-256.',
+        '- `benchmarks/comparisons.{json,csv}` records every Rust/comparator pair, including direct pycocotools rows when installed.',
         '- `extension/` contains that compiled extension and ELF metadata when available.',
         '- `source/` snapshots the Rust kernels and benchmark/profiling front doors.',
         '- `git/` records HEAD, dirty status, and the working-tree diff.',
@@ -739,7 +848,7 @@ def main(argv=None):
     parser.add_argument('--skip-tests', action='store_true')
     parser.add_argument('--no-perf', action='store_true')
     parser.add_argument('--rebuild-profiled', action='store_true',
-                        help='Run maturin develop --release with debug info and frame pointers first.')
+                        help='Run maturin develop --release with portable target-cpu=generic and debug info first.')
     parser.add_argument('--cases', help='Comma-separated benchmark cases; default all.')
     parser.add_argument('--perf-cases', default=','.join(DEFAULT_PERF_CASES),
                         help='Comma-separated cases for perf stat/record.')
@@ -810,6 +919,7 @@ def main(argv=None):
                 hard_failure = True
 
         _write_benchmark_csv(bundle, benchmark_json)
+        _write_comparison_outputs(bundle, benchmark_json)
         _capture_extension_artifact(bundle, benchmark_json, commands, env)
 
         can_perf = (

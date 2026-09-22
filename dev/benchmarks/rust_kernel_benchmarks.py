@@ -17,6 +17,7 @@ import contextlib
 import gc
 import hashlib
 import importlib
+import importlib.metadata
 import json
 import math
 import os
@@ -49,6 +50,7 @@ class PreparedCase:
     verify: Callable[[], dict] | None = None
     work_items: int | None = None
     work_unit: str | None = None
+    traits: dict | None = None
 
     @property
     def mutates(self) -> bool:
@@ -80,27 +82,56 @@ CASE_SPECS = (
         perf_default=True,
     ),
     CaseSpec(
+        'mask_encode_sparse_128x128x16', 'mask',
+        'Sixteen sparse 128 x 128 masks; small-mask / per-instance overhead workload.',
+    ),
+    CaseSpec(
         'mask_encode_512x512x4', 'mask',
         'Four sparse 512 x 512 masks encoded to COCO RLE.',
         perf_default=True,
     ),
     CaseSpec(
         'mask_encode_dense_512x512x4', 'mask',
-        'Four 50%-dense random 512 x 512 masks; run-heavy RLE encode workload.',
+        'Four 50%-dense random 512 x 512 masks; transition-heavy RLE workload.',
     ),
     CaseSpec(
         'mask_encode_structured_512x512x4', 'mask',
-        'Four structured 512 x 512 masks; long-run/object-overhead encode workload.',
+        'Four structured 512 x 512 masks; realistic long-run rectangle workload.',
         perf_default=True,
     ),
     CaseSpec(
         'mask_encode_solid_512x512x4', 'mask',
-        'Four solid/half-plane 512 x 512 masks; extreme long-run encode workload.',
+        'Four solid/half-plane 512 x 512 masks; extreme long-run workload.',
+    ),
+    CaseSpec(
+        'mask_encode_many_64x64x128', 'mask',
+        '128 small 64 x 64 masks; Python/RLE-object creation overhead workload.',
+    ),
+    CaseSpec(
+        'mask_encode_odd_513x509x4', 'mask',
+        'Four structured odd-sized 513 x 509 masks; non-power-of-two dimensions.',
+    ),
+    CaseSpec(
+        'mask_encode_uint8_255_512x512x4', 'mask',
+        'Four structured masks stored as 0/255 uint8; common OpenCV-style representation.',
+    ),
+    CaseSpec(
+        'mask_encode_hd_720x1280x1', 'mask',
+        'One structured 720 x 1280 mask; common HD-scale single-instance workload.',
+        quick=False,
     ),
     CaseSpec(
         'mask_iou_fragmented_48', 'mask',
         '48 x 48 fragmented-mask IoU matrix; RLE run-scanning workload.',
         perf_default=True,
+    ),
+    CaseSpec(
+        'mask_iou_structured_64', 'mask',
+        '64 x 64 structured-mask IoU matrix; long-run bbox-prefilter workload.',
+    ),
+    CaseSpec(
+        'mask_iou_crowd_32', 'mask',
+        '32 x 32 structured-mask IoU matrix with alternating COCO crowd flags.',
     ),
     CaseSpec(
         'assignment_sparse', 'assignment',
@@ -119,11 +150,19 @@ def _rust_module():
     return importlib.import_module('kwimage_ext._rust')
 
 
-def _optional_legacy_module(name):
+def _optional_module(name):
     try:
         return importlib.import_module(name)
     except Exception:
         return None
+
+
+def _optional_legacy_module(name):
+    return _optional_module(name)
+
+
+def _optional_pycocotools_mask():
+    return _optional_module('pycocotools.mask')
 
 
 def _random_boxes(rng, n, extent=2048.0, min_size=2.0, max_size=128.0):
@@ -341,88 +380,192 @@ def _prepare_nms_case(spec, backend, seed):
         work_items=len(boxes), work_unit='input-boxes')
 
 
+def _structured_masks(rng, shape, rectangles=24):
+    h, w, n = shape
+    masks = np.zeros(shape, dtype=np.uint8)
+    max_h = max(2, min(h, max(8, h // 5)))
+    max_w = max(2, min(w, max(8, w // 5)))
+    for chan in range(n):
+        for _ in range(rectangles):
+            y1 = int(rng.randint(0, max(1, h)))
+            x1 = int(rng.randint(0, max(1, w)))
+            rh = int(rng.randint(1, max_h + 1))
+            rw = int(rng.randint(1, max_w + 1))
+            masks[y1:min(h, y1 + rh), x1:min(w, x1 + rw), chan] = 1
+    return masks
+
+
+def _make_mask_encode_fixture(name, rng):
+    if name == 'mask_encode_sparse_128x128x16':
+        masks = (rng.random_sample((128, 128, 16)) > 0.94).astype(np.uint8)
+    elif name == 'mask_encode_512x512x4':
+        masks = (rng.random_sample((512, 512, 4)) > 0.94).astype(np.uint8)
+    elif name == 'mask_encode_dense_512x512x4':
+        masks = (rng.random_sample((512, 512, 4)) > 0.50).astype(np.uint8)
+    elif name == 'mask_encode_structured_512x512x4':
+        masks = _structured_masks(rng, (512, 512, 4), rectangles=24)
+    elif name == 'mask_encode_solid_512x512x4':
+        masks = np.zeros((512, 512, 4), dtype=np.uint8)
+        masks[:, :, 1] = 1
+        masks[:256, :, 2] = 1
+        masks[:, :256, 3] = 1
+    elif name == 'mask_encode_many_64x64x128':
+        masks = _structured_masks(rng, (64, 64, 128), rectangles=4)
+    elif name == 'mask_encode_odd_513x509x4':
+        masks = _structured_masks(rng, (513, 509, 4), rectangles=24)
+    elif name == 'mask_encode_uint8_255_512x512x4':
+        masks = _structured_masks(rng, (512, 512, 4), rectangles=24) * np.uint8(255)
+    elif name == 'mask_encode_hd_720x1280x1':
+        masks = _structured_masks(rng, (720, 1280, 1), rectangles=48)
+    else:
+        raise AssertionError(name)
+    return np.asfortranarray(masks, dtype=np.uint8)
+
+
+def _make_mask_iou_fixture(name, rng):
+    if name == 'mask_iou_fragmented_48':
+        masks = (rng.random_sample((96, 96, 48)) > 0.90).astype(np.uint8)
+        crowd = [0] * 48
+    elif name == 'mask_iou_structured_64':
+        masks = _structured_masks(rng, (256, 256, 64), rectangles=8)
+        crowd = [0] * 64
+    elif name == 'mask_iou_crowd_32':
+        masks = _structured_masks(rng, (256, 256, 32), rectangles=8)
+        crowd = [idx % 2 for idx in range(32)]
+    else:
+        raise AssertionError(name)
+    return np.asfortranarray(masks, dtype=np.uint8), crowd
+
+
+def _mask_traits(masks):
+    logical = masks != 0
+    h, w, n = masks.shape
+    transitions = 0
+    comparisons = 0
+    for idx in range(n):
+        flat = np.ravel(logical[:, :, idx], order='F')
+        if flat.size > 1:
+            transitions += int(np.count_nonzero(flat[1:] != flat[:-1]))
+            comparisons += flat.size - 1
+    unique_values = np.unique(masks)
+    if unique_values.size <= 8:
+        stored_values = [int(v) for v in unique_values]
+    else:
+        stored_values = ['many']
+    return {
+        'shape': list(map(int, masks.shape)),
+        'dtype': str(masks.dtype),
+        'f_contiguous': bool(masks.flags.f_contiguous),
+        'c_contiguous': bool(masks.flags.c_contiguous),
+        'foreground_fraction': float(np.mean(logical)) if logical.size else 0.0,
+        'logical_transition_fraction': (
+            float(transitions / comparisons) if comparisons else 0.0
+        ),
+        'stored_values': stored_values,
+    }
+
+
+def _rle_signature(rles):
+    signature = []
+    for item in rles:
+        counts = item['counts']
+        if isinstance(counts, str):
+            counts = counts.encode()
+        else:
+            counts = bytes(counts)
+        signature.append((tuple(map(int, item['size'])), counts))
+    return signature
+
+
 def _prepare_mask_case(spec, backend, seed):
     rng = np.random.RandomState(seed)
     rust = _rust_module()
     legacy = _optional_legacy_module(
         'kwimage_ext.structs._mask_backend.cython_mask_legacy')
-    modules = {'rust': rust, 'legacy': legacy}
+    pycocotools = _optional_pycocotools_mask()
+    modules = {
+        'rust': rust,
+        'legacy': legacy,
+        'pycocotools': pycocotools,
+    }
     module = modules.get(backend)
     if module is None:
         raise LookupError(f'backend {backend!r} unavailable for {spec.name}')
 
     if spec.name.startswith('mask_encode_'):
-        if spec.name == 'mask_encode_512x512x4':
-            masks = (rng.random_sample((512, 512, 4)) > 0.94).astype(np.uint8)
-        elif spec.name == 'mask_encode_dense_512x512x4':
-            masks = (rng.random_sample((512, 512, 4)) > 0.50).astype(np.uint8)
-        elif spec.name == 'mask_encode_structured_512x512x4':
-            masks = np.zeros((512, 512, 4), dtype=np.uint8)
-            for chan in range(masks.shape[2]):
-                for _ in range(24):
-                    y1 = int(rng.randint(0, 448))
-                    x1 = int(rng.randint(0, 448))
-                    h = int(rng.randint(8, 96))
-                    w = int(rng.randint(8, 96))
-                    masks[y1:min(512, y1 + h), x1:min(512, x1 + w), chan] = 1
-        elif spec.name == 'mask_encode_solid_512x512x4':
-            masks = np.zeros((512, 512, 4), dtype=np.uint8)
-            masks[:, :, 1] = 1
-            masks[:256, :, 2] = 1
-            masks[:, :256, 3] = 1
-        else:
-            raise AssertionError(spec.name)
-        masks = np.asfortranarray(masks)
+        masks = _make_mask_encode_fixture(spec.name, rng)
+        traits = _mask_traits(masks)
 
         def call():
             return module.encode(masks)
 
         def verify():
             got = rust.encode(masks)
-            info = {'digest': _digest_value(got)}
+            got_sig = _rle_signature(got)
+            decoded = rust.decode(got)
+            expected_binary = (masks != 0).astype(np.uint8)
+            np.testing.assert_array_equal(decoded, expected_binary)
+            info = {
+                'digest': _digest_value(got),
+                'comparators': [],
+            }
             if legacy is not None:
                 want = legacy.encode(masks)
-                assert [x['counts'] for x in got] == [x['counts'] for x in want]
-                info['comparator'] = 'legacy-cython'
-            else:
-                decoded = rust.decode(got)
-                np.testing.assert_array_equal(decoded, masks)
-                info['comparator'] = 'roundtrip'
+                assert got_sig == _rle_signature(want)
+                info['comparators'].append('legacy-cython')
+            if pycocotools is not None:
+                want = pycocotools.encode(masks)
+                assert got_sig == _rle_signature(want)
+                info['comparators'].append('pycocotools')
+            info['comparator'] = (
+                info['comparators'][0] if info['comparators'] else 'roundtrip'
+            )
             return info
 
         return PreparedCase(
             spec, backend, call, verify=verify,
-            work_items=masks.size, work_unit='pixels')
+            work_items=masks.size, work_unit='pixels', traits=traits)
 
-    masks = np.asfortranarray(
-        (rng.random_sample((96, 96, 48)) > 0.90).astype(np.uint8))
+    masks, crowd = _make_mask_iou_fixture(spec.name, rng)
+    traits = _mask_traits(masks)
+    traits['matrix_shape'] = [int(masks.shape[2]), int(masks.shape[2])]
+    traits['crowd_fraction'] = float(np.mean(crowd)) if crowd else 0.0
     rust_rles = rust.encode(masks)
+    # RLE dictionaries are the interchange representation. Use each backend's
+    # encoder for its timed IoU call so the benchmark also catches backend-
+    # specific assumptions about canonical COCO RLE objects, while encoding
+    # itself remains outside the timed region.
     if backend == 'rust':
         rles = rust_rles
     else:
-        rles = legacy.encode(masks)
-    crowd = [0] * len(rles)
+        rles = module.encode(masks)
 
     def call():
         return module.iou(rles, rles, crowd)
 
     def verify():
-        got = rust.iou(rust_rles, rust_rles, crowd)
-        info = {'digest': _digest_value(got)}
-        np.testing.assert_allclose(np.diag(got), 1.0, rtol=0, atol=0)
+        got = np.asarray(rust.iou(rust_rles, rust_rles, crowd))
+        info = {'digest': _digest_value(got), 'comparators': []}
+        if not any(crowd):
+            np.testing.assert_allclose(np.diag(got), 1.0, rtol=0, atol=0)
         if legacy is not None:
             legacy_rles = legacy.encode(masks)
-            want = legacy.iou(legacy_rles, legacy_rles, crowd)
+            want = np.asarray(legacy.iou(legacy_rles, legacy_rles, crowd))
             np.testing.assert_allclose(got, want, rtol=0, atol=0)
-            info['comparator'] = 'legacy-cython'
-        else:
-            info['comparator'] = 'self-iou-invariant'
+            info['comparators'].append('legacy-cython')
+        if pycocotools is not None:
+            pycoco_rles = pycocotools.encode(masks)
+            want = np.asarray(pycocotools.iou(pycoco_rles, pycoco_rles, crowd))
+            np.testing.assert_allclose(got, want, rtol=0, atol=0)
+            info['comparators'].append('pycocotools')
+        info['comparator'] = (
+            info['comparators'][0] if info['comparators'] else 'self-iou-invariant'
+        )
         return info
 
     return PreparedCase(
         spec, backend, call, verify=verify,
-        work_items=len(rles) * len(rles), work_unit='rle-pairs')
-
+        work_items=len(rles) * len(rles), work_unit='rle-pairs', traits=traits)
 
 def _prepare_assignment_case(spec, backend, seed):
     rust = _rust_module()
@@ -499,8 +642,11 @@ def prepare_case(name, backend='rust', seed=0):
 
 def available_backends(name, seed=0):
     backends = []
+    family = CASE_BY_NAME[name].family
     candidates = ['rust']
-    if CASE_BY_NAME[name].family != 'assignment':
+    if family == 'mask':
+        candidates.extend(['legacy', 'pycocotools'])
+    elif family != 'assignment':
         candidates.append('legacy')
     elif name == 'assignment_sparse':
         candidates.append('python')
@@ -586,6 +732,7 @@ def benchmark_case(case, *, samples=9, target_sample_seconds=0.08, warmup=3):
         'work_unit': case.work_unit,
         'result_digest': _digest_value(last_result),
         'verification': verify_info,
+        'traits': case.traits or {},
     }
     if case.work_items:
         result['median_ns_per_work_item'] = result['median_ns'] / case.work_items
@@ -605,6 +752,13 @@ def _extension_metadata():
     }
 
 
+def _optional_distribution_version(name):
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
 def environment_metadata():
     affinity = None
     if hasattr(os, 'sched_getaffinity'):
@@ -617,6 +771,9 @@ def environment_metadata():
         'machine': platform.machine(),
         'processor': platform.processor(),
         'numpy_version': np.__version__,
+        'optional_backend_versions': {
+            'pycocotools': _optional_distribution_version('pycocotools'),
+        },
         'cpu_affinity': affinity,
         'rust_extension': _extension_metadata(),
     }
@@ -645,7 +802,7 @@ def run_suite(case_names=None, *, backends='auto', seed=0, samples=9,
                 warmup=warmup,
             ))
     return {
-        'schema_version': 1,
+        'schema_version': 2,
         'generated_at_unix': time.time(),
         'seed': seed,
         'environment': environment_metadata(),
@@ -697,7 +854,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--list', action='store_true', help='List benchmark cases and exit.')
     parser.add_argument('--cases', default='all', help='Comma-separated cases, or all.')
-    parser.add_argument('--backend', choices=['auto', 'rust', 'legacy', 'python'], default='auto')
+    parser.add_argument('--backend', choices=['auto', 'rust', 'legacy', 'pycocotools', 'python'], default='auto')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--samples', type=int, default=9)
     parser.add_argument('--warmup', type=int, default=3)
@@ -728,6 +885,8 @@ def main(argv=None):
         samples = args.samples
         target_seconds = args.target_sample_seconds
     case_names = _parse_case_names(args.cases)
+    if args.quick and args.cases == 'all':
+        case_names = [name for name in case_names if CASE_BY_NAME[name].quick]
     selected_backends = args.backend if args.backend == 'auto' else [args.backend]
     payload = run_suite(
         case_names,
