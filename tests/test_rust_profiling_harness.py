@@ -55,6 +55,106 @@ def test_percentile_interpolates_deterministically():
     assert bench._percentile([10.0, 20.0], 0.25) == 12.5
 
 
+def test_group_benchmark_uses_paired_sample_ratios(monkeypatch):
+    bench = _load_module(BENCH_PATH, '_kwimage_ext_bench_test_paired_group')
+    spec = bench.CaseSpec('fake_case', 'test', 'paired timing test')
+    cases = [
+        bench.PreparedCase(spec, 'rust', lambda: np.array([1])),
+        bench.PreparedCase(spec, 'legacy', lambda: np.array([1])),
+    ]
+    elapsed = {
+        'rust': iter([10, 20, 30, 40]),
+        'legacy': iter([20, 40, 60, 80]),
+    }
+
+    monkeypatch.setattr(
+        bench, '_calibrate_case',
+        lambda case, **kwargs: ({'comparator': 'test'}, 1))
+
+    def fake_time(case, loops):
+        assert loops == 1
+        return np.array([1]), next(elapsed[case.backend])
+
+    monkeypatch.setattr(bench, '_time_case_sample', fake_time)
+    rows, pairs = bench.benchmark_case_group(
+        cases, samples=4, target_sample_seconds=0.001, warmup=0)
+    assert [row['backend'] for row in rows] == ['rust', 'legacy']
+    assert len(pairs) == 1
+    pair = pairs[0]
+    assert pair['rust_over_comparator_sample_ratios'] == [0.5] * 4
+    assert pair['rust_over_comparator_median'] == 0.5
+
+
+def test_run_suite_aggregates_paired_ratios_across_seeds(monkeypatch):
+    bench = _load_module(BENCH_PATH, '_kwimage_ext_bench_test_multiseed_suite')
+    spec = bench.CaseSpec('fake_case', 'test', 'multi-seed timing test')
+    monkeypatch.setitem(bench.CASE_BY_NAME, 'fake_case', spec)
+    monkeypatch.setattr(
+        bench, 'available_backends',
+        lambda name, seed=0: ['rust', 'legacy'])
+    monkeypatch.setattr(
+        bench, 'prepare_case',
+        lambda name, backend='rust', seed=0: bench.PreparedCase(
+            spec, backend, lambda: np.array([seed], dtype=np.int64)))
+    monkeypatch.setattr(bench, 'environment_metadata', lambda: {'test': True})
+
+    def fake_group(cases, **kwargs):
+        seed = int(cases[0].call()[0])
+        rows = []
+        medians = {'rust': 10.0 + seed, 'legacy': 20.0 + seed}
+        for case in cases:
+            median = medians[case.backend]
+            rows.append({
+                'case': 'fake_case',
+                'family': 'test',
+                'description': 'multi-seed timing test',
+                'backend': case.backend,
+                'samples': 2,
+                'loops_per_sample': 3,
+                'median_ns': median,
+                'mean_ns': median,
+                'min_ns': median,
+                'p05_ns': median,
+                'p95_ns': median,
+                'max_ns': median,
+                'stdev_ns': 0.0,
+                'sample_ns': [median, median],
+                'work_items': 1,
+                'work_unit': 'item',
+                'median_ns_per_work_item': median,
+                'result_digest': f'{case.backend}-{seed}',
+                'verification': {'comparator': 'test'},
+                'traits': {'seed': seed},
+            })
+        ratio = medians['rust'] / medians['legacy']
+        pairs = [{
+            'case': 'fake_case',
+            'family': 'test',
+            'comparator': 'legacy',
+            'ratio_method': 'paired-rotating-order-samples',
+            'samples': 2,
+            'rust_over_comparator_sample_ratios': [ratio, ratio],
+            'rust_over_comparator_median': ratio,
+            'rust_over_comparator_p05': ratio,
+            'rust_over_comparator_p95': ratio,
+        }]
+        return rows, pairs
+
+    monkeypatch.setattr(bench, 'benchmark_case_group', fake_group)
+    payload = bench.run_suite(
+        ['fake_case'], seeds=[0, 1], samples=2,
+        target_sample_seconds=0.001, warmup=0)
+    assert payload['schema_version'] == 3
+    assert payload['seeds'] == [0, 1]
+    assert len(payload['results']) == 2
+    rust = next(row for row in payload['results'] if row['backend'] == 'rust')
+    assert rust['samples'] == 4
+    assert rust['loops_per_seed'] == {'0': 3, '1': 3}
+    pair = payload['paired_comparisons'][0]
+    assert pair['samples'] == 4
+    assert pair['seeds'] == [0, 1]
+
+
 def test_list_mode_does_not_require_importable_extension():
     proc = subprocess.run(
         [sys.executable, str(BENCH_PATH), '--list'],
@@ -262,6 +362,156 @@ def test_benchmark_provenance_requires_current_extension(tmp_path, monkeypatch):
     benchmark_json.write_text(json.dumps(payload))
     status = profile._benchmark_provenance(bundle, benchmark_json)
     assert status['ok'] is True
+
+
+def test_benchmark_provenance_verifies_rebuilt_legacy_artifacts(tmp_path, monkeypatch):
+    profile = _load_module(PROFILE_PATH, '_kwimage_ext_profile_test_legacy_provenance')
+    monkeypatch.setattr(profile, '_source_version', lambda: '0.4.1')
+    bundle = tmp_path / 'bundle'
+    (bundle / 'build').mkdir(parents=True)
+    benchmark_json = tmp_path / 'results.json'
+    legacy_name = 'kwimage_ext.structs._mask_backend.cython_mask_legacy'
+    (bundle / 'build' / 'legacy-reference.json').write_text(json.dumps({
+        'ok': True,
+        'artifacts': {
+            legacy_name: {'path': '/tmp/legacy.so', 'sha256': 'legacy-hash'},
+        },
+    }))
+    benchmark_json.write_text(json.dumps({
+        'environment': {
+            'rust_extension': {
+                'version': '0.4.1',
+                'path': '/tmp/_rust.so',
+                'sha256': 'rust-hash',
+            },
+            'backend_artifacts': {
+                'legacy': {
+                    legacy_name: {
+                        'path': '/tmp/legacy.so',
+                        'sha256': 'legacy-hash',
+                    },
+                },
+                'pycocotools': {},
+            },
+            'optional_backend_versions': {},
+        },
+        'results': [
+            {'case': 'mask', 'backend': 'rust'},
+            {'case': 'mask', 'backend': 'legacy'},
+        ],
+    }))
+    status = profile._benchmark_provenance(bundle, benchmark_json)
+    assert status['ok'] is True
+    assert status['legacy_reference_rebuilt'] is True
+    assert status['legacy_artifact_matches'][legacy_name] is True
+    assert status['legacy_claim_verified'] is True
+
+
+def test_benchmark_provenance_can_require_exact_pycocotools(tmp_path, monkeypatch):
+    profile = _load_module(
+        PROFILE_PATH, '_kwimage_ext_profile_test_pycoco_version_requirement')
+    monkeypatch.setattr(profile, '_source_version', lambda: '0.4.1')
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    benchmark_json = tmp_path / 'results.json'
+    benchmark_json.write_text(json.dumps({
+        'environment': {
+            'rust_extension': {
+                'version': '0.4.1',
+                'path': '/tmp/_rust.so',
+                'sha256': 'rust-hash',
+            },
+            'backend_artifacts': {
+                'legacy': {},
+                'pycocotools': {
+                    '_mask': {
+                        'path': '/tmp/_mask.so',
+                        'sha256': 'pycoco-hash',
+                    },
+                },
+            },
+            'optional_backend_versions': {'pycocotools': '2.0.11'},
+        },
+        'results': [
+            {'case': 'mask', 'backend': 'rust'},
+            {'case': 'mask', 'backend': 'pycocotools'},
+        ],
+    }))
+    matched = profile._benchmark_provenance(
+        bundle, benchmark_json, required_pycocotools_version='2.0.11')
+    assert matched['ok'] is True
+    assert matched['pycocotools_version_requirement_met'] is True
+    mismatched = profile._benchmark_provenance(
+        bundle, benchmark_json, required_pycocotools_version='2.0.10')
+    assert mismatched['ok'] is False
+    assert mismatched['pycocotools_version_requirement_met'] is False
+
+
+def test_comparison_claim_requires_portable_and_comparator_provenance():
+    profile = _load_module(
+        PROFILE_PATH, '_kwimage_ext_profile_test_claim_provenance')
+    provenance = {
+        'ok': True,
+        'portable_build_verified': True,
+        'legacy_claim_verified': True,
+        'pycocotools_claim_verified': True,
+    }
+    base_row = {
+        'ratio_method': 'paired-rotating-order-samples-multi-seed',
+        'ratio_seeds': [0, 1, 2],
+        'ratio_samples': 27,
+        'ratio_p05': 0.8,
+        'ratio_p95': 0.9,
+    }
+    for comparator in ['legacy', 'pycocotools', 'python']:
+        row = {**base_row, 'comparator': comparator}
+        assert profile._comparison_claim_verified(provenance, row) is True
+    provenance['portable_build_verified'] = False
+    row = {**base_row, 'comparator': 'legacy'}
+    assert profile._comparison_claim_verified(provenance, row) is False
+    provenance['portable_build_verified'] = True
+    provenance['legacy_claim_verified'] = False
+    assert profile._comparison_claim_verified(provenance, row) is False
+    provenance['legacy_claim_verified'] = True
+    one_seed = {**row, 'ratio_seeds': [0]}
+    assert profile._comparison_claim_verified(provenance, one_seed) is False
+
+
+def test_legacy_rebuild_pins_benchmark_python(tmp_path, monkeypatch):
+    profile = _load_module(
+        PROFILE_PATH, '_kwimage_ext_profile_test_legacy_python')
+    seen = []
+    artifact_names = [
+        'kwimage_ext.structs._boxes_backend.cython_boxes_legacy',
+        'kwimage_ext.structs._mask_backend.cython_mask_legacy',
+        'kwimage_ext.algo._nms_backend.cpu_nms_legacy',
+        'kwimage_ext.algo._nms_backend.cpu_soft_nms_legacy',
+    ]
+
+    def fake_run(command, **kwargs):
+        seen.append((list(command), dict(kwargs.get('env') or {})))
+        if command[0] == sys.executable:
+            stdout = json.dumps({
+                name: {'path': f'/tmp/{idx}.so', 'sha256': f'hash-{idx}'}
+                for idx, name in enumerate(artifact_names)
+            })
+        else:
+            stdout = ''
+        return {
+            'command': list(command),
+            'returncode': 0,
+            'duration_seconds': 0.0,
+            'stdout': stdout,
+            'stderr': '',
+        }
+
+    monkeypatch.setattr(profile, '_run', fake_run)
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    payload = profile._rebuild_legacy_reference(bundle, [], {'PATH': '/tmp'})
+    assert payload['ok'] is True
+    assert payload['python_executable'] == sys.executable
+    assert seen[0][1]['KWIMAGE_EXT_LEGACY_PYTHON'] == sys.executable
 
 
 def test_perf_workload_hashes_only_after_sampled_loop(monkeypatch):

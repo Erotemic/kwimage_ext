@@ -123,6 +123,14 @@ def test_benchmark_matrix_declares_common_mask_variations():
         'mask_encode_odd_513x509x4',
         'mask_encode_uint8_255_512x512x4',
         'mask_encode_hd_720x1280x1',
+        'mask_decode_structured_256x256x32',
+        'mask_decode_fragmented_256x256x32',
+        'mask_area_structured_256x256x32',
+        'mask_area_fragmented_256x256x32',
+        'mask_tobbox_structured_256x256x32',
+        'mask_tobbox_fragmented_256x256x32',
+        'mask_merge_structured_256x256x32',
+        'mask_merge_fragmented_256x256x32',
         'mask_iou_fragmented_48',
         'mask_iou_structured_64',
         'mask_iou_crowd_32',
@@ -151,6 +159,21 @@ def test_mask_benchmark_fixtures_record_useful_traits():
         bench._make_mask_encode_fixture(
             'mask_encode_uint8_255_512x512x4', np.random.RandomState(0)))
     assert values_255['stored_values'] == [0, 255]
+
+
+def test_rle_operation_fixtures_cover_distinct_run_regimes():
+    bench = _load_module(BENCH_PATH, '_kwimage_benchmark_rle_regime_test')
+    structured = bench._make_mask_rle_operation_fixture(
+        'mask_decode_structured_256x256x32', np.random.RandomState(0))
+    fragmented = bench._make_mask_rle_operation_fixture(
+        'mask_decode_fragmented_256x256x32', np.random.RandomState(0))
+    structured_traits = bench._mask_traits(structured)
+    fragmented_traits = bench._mask_traits(fragmented)
+    assert structured.shape == fragmented.shape == (256, 256, 32)
+    assert (
+        structured_traits['logical_transition_fraction']
+        < fragmented_traits['logical_transition_fraction']
+    )
 
 
 def test_direct_pycocotools_backend_is_exposed_when_installed():
@@ -184,3 +207,34 @@ def test_comparison_rows_keep_every_comparator_and_use_conservative_band():
     assert rows[0]['rust_over_comparator'] == pytest.approx(0.9)
     assert rows[1]['rust_over_comparator'] == pytest.approx(0.75)
     assert all(row['observed_band'] == 'faster_by_at_least_5pct' for row in rows)
+
+
+def test_comparison_rows_prefer_paired_multi_seed_ratio():
+    profile = _load_module(PROFILE_PATH, '_kwimage_profile_paired_claim_test')
+    payload = {
+        'results': [
+            {'case': 'mask', 'family': 'mask', 'backend': 'rust',
+             'median_ns': 100.0, 'p05_ns': 90.0, 'p95_ns': 110.0},
+            {'case': 'mask', 'family': 'mask', 'backend': 'legacy',
+             'median_ns': 100.0, 'p05_ns': 90.0, 'p95_ns': 110.0},
+        ],
+        'paired_comparisons': [{
+            'case': 'mask',
+            'family': 'mask',
+            'comparator': 'legacy',
+            'ratio_method': 'paired-rotating-order-samples-multi-seed',
+            'seeds': [0, 1, 2],
+            'samples': 9,
+            'rust_over_comparator_median': 0.90,
+            'rust_over_comparator_p05': 0.88,
+            'rust_over_comparator_p95': 0.93,
+        }],
+    }
+    rows = profile._comparison_rows(payload)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row['rust_over_comparator'] == pytest.approx(0.90)
+    assert row['ratio_method'] == 'paired-rotating-order-samples-multi-seed'
+    assert row['ratio_samples'] == 9
+    assert row['ratio_seeds'] == [0, 1, 2]
+    assert row['observed_band'] == 'faster_by_at_least_5pct'

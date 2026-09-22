@@ -84,6 +84,7 @@ CASE_SPECS = (
     CaseSpec(
         'mask_encode_sparse_128x128x16', 'mask',
         'Sixteen sparse 128 x 128 masks; small-mask / per-instance overhead workload.',
+        perf_default=True,
     ),
     CaseSpec(
         'mask_encode_512x512x4', 'mask',
@@ -119,6 +120,38 @@ CASE_SPECS = (
         'mask_encode_hd_720x1280x1', 'mask',
         'One structured 720 x 1280 mask; common HD-scale single-instance workload.',
         quick=False,
+    ),
+    CaseSpec(
+        'mask_decode_structured_256x256x32', 'mask',
+        'Decode 32 structured 256 x 256 COCO RLE masks; low-run-count workload.',
+    ),
+    CaseSpec(
+        'mask_decode_fragmented_256x256x32', 'mask',
+        'Decode 32 fragmented 256 x 256 COCO RLE masks; high-run-count workload.',
+    ),
+    CaseSpec(
+        'mask_area_structured_256x256x32', 'mask',
+        'Area of 32 structured 256 x 256 COCO RLE masks; low-run-count workload.',
+    ),
+    CaseSpec(
+        'mask_area_fragmented_256x256x32', 'mask',
+        'Area of 32 fragmented 256 x 256 COCO RLE masks; high-run-count workload.',
+    ),
+    CaseSpec(
+        'mask_tobbox_structured_256x256x32', 'mask',
+        'Bounding boxes for 32 structured 256 x 256 COCO RLE masks.',
+    ),
+    CaseSpec(
+        'mask_tobbox_fragmented_256x256x32', 'mask',
+        'Bounding boxes for 32 fragmented 256 x 256 COCO RLE masks.',
+    ),
+    CaseSpec(
+        'mask_merge_structured_256x256x32', 'mask',
+        'Union of 32 structured 256 x 256 COCO RLE masks.',
+    ),
+    CaseSpec(
+        'mask_merge_fragmented_256x256x32', 'mask',
+        'Union of 32 fragmented 256 x 256 COCO RLE masks.',
     ),
     CaseSpec(
         'mask_iou_fragmented_48', 'mask',
@@ -437,6 +470,16 @@ def _make_mask_iou_fixture(name, rng):
     return np.asfortranarray(masks, dtype=np.uint8), crowd
 
 
+def _make_mask_rle_operation_fixture(name, rng):
+    if '_structured_' in name:
+        masks = _structured_masks(rng, (256, 256, 32), rectangles=8)
+    elif '_fragmented_' in name:
+        masks = (rng.random_sample((256, 256, 32)) > 0.90).astype(np.uint8)
+    else:
+        raise AssertionError(name)
+    return np.asfortranarray(masks, dtype=np.uint8)
+
+
 def _mask_traits(masks):
     logical = masks != 0
     h, w, n = masks.shape
@@ -525,6 +568,78 @@ def _prepare_mask_case(spec, backend, seed):
         return PreparedCase(
             spec, backend, call, verify=verify,
             work_items=masks.size, work_unit='pixels', traits=traits)
+
+    if spec.name.startswith((
+        'mask_decode_', 'mask_area_', 'mask_tobbox_', 'mask_merge_'
+    )):
+        masks = _make_mask_rle_operation_fixture(spec.name, rng)
+        traits = _mask_traits(masks)
+        traits['rle_regime'] = (
+            'structured-low-transition'
+            if '_structured_' in spec.name
+            else 'fragmented-high-transition'
+        )
+        rust_rles = rust.encode(masks)
+        # RLE dictionaries are a shared COCO interchange representation. Feed
+        # every backend the exact same objects here so these timings isolate
+        # decode/area/toBbox/merge rather than accidentally including any
+        # backend-specific encoding choice in the benchmark setup.
+        backend_rles = rust_rles
+
+        if spec.name.startswith('mask_decode_'):
+            def call():
+                return module.decode(backend_rles)
+
+            def verify():
+                got = rust.decode(rust_rles)
+                expected = (masks != 0).astype(np.uint8)
+                np.testing.assert_array_equal(got, expected)
+                want = module.decode(backend_rles)
+                np.testing.assert_array_equal(got, want)
+                return {'digest': _digest_value(got), 'comparator': backend}
+
+            work_items = masks.size
+            work_unit = 'decoded-pixels'
+        elif spec.name.startswith('mask_area_'):
+            def call():
+                return module.area(backend_rles)
+
+            def verify():
+                got = np.asarray(rust.area(rust_rles))
+                want = np.asarray(module.area(backend_rles))
+                np.testing.assert_array_equal(got, want)
+                return {'digest': _digest_value(got), 'comparator': backend}
+
+            work_items = masks.shape[2]
+            work_unit = 'rles'
+        elif spec.name.startswith('mask_tobbox_'):
+            def call():
+                return module.toBbox(backend_rles)
+
+            def verify():
+                got = np.asarray(rust.toBbox(rust_rles))
+                want = np.asarray(module.toBbox(backend_rles))
+                np.testing.assert_allclose(got, want, rtol=0, atol=0)
+                return {'digest': _digest_value(got), 'comparator': backend}
+
+            work_items = masks.shape[2]
+            work_unit = 'rles'
+        else:
+            def call():
+                return module.merge(backend_rles, intersect=0)
+
+            def verify():
+                got = rust.merge(rust_rles, intersect=0)
+                want = module.merge(backend_rles, intersect=0)
+                assert _rle_signature([got]) == _rle_signature([want])
+                return {'digest': _digest_value(got), 'comparator': backend}
+
+            work_items = masks.shape[2]
+            work_unit = 'rles-merged'
+
+        return PreparedCase(
+            spec, backend, call, verify=verify,
+            work_items=work_items, work_unit=work_unit, traits=traits)
 
     masks, crowd = _make_mask_iou_fixture(spec.name, rng)
     traits = _mask_traits(masks)
@@ -683,7 +798,7 @@ def _one_timed_call(case):
     return result, elapsed
 
 
-def benchmark_case(case, *, samples=9, target_sample_seconds=0.08, warmup=3):
+def _calibrate_case(case, *, target_sample_seconds, warmup):
     verify_info = case.verify() if case.verify is not None else {}
     for _ in range(warmup):
         _one_timed_call(case)
@@ -694,31 +809,27 @@ def benchmark_case(case, *, samples=9, target_sample_seconds=0.08, warmup=3):
     else:
         target_ns = max(1, int(target_sample_seconds * 1e9))
         loops = max(1, min(1_000_000, target_ns // max(probe_ns, 1)))
+    return verify_info, loops
 
-    sample_ns = []
+
+def _time_case_sample(case, loops):
+    if case.mutates:
+        return _one_timed_call(case)
+    start = time.perf_counter_ns()
     last_result = None
-    gc_was_enabled = gc.isenabled()
-    gc.disable()
-    try:
-        for _ in range(samples):
-            if case.mutates:
-                last_result, elapsed = _one_timed_call(case)
-            else:
-                start = time.perf_counter_ns()
-                for _loop_idx in range(loops):
-                    last_result = case.call()
-                elapsed = time.perf_counter_ns() - start
-            sample_ns.append(elapsed / loops)
-    finally:
-        if gc_was_enabled:
-            gc.enable()
+    for _loop_idx in range(loops):
+        last_result = case.call()
+    elapsed = time.perf_counter_ns() - start
+    return last_result, elapsed
 
+
+def _result_row(case, *, verify_info, loops, sample_ns, last_result):
     result = {
         'case': case.spec.name,
         'family': case.spec.family,
         'description': case.spec.description,
         'backend': case.backend,
-        'samples': samples,
+        'samples': len(sample_ns),
         'loops_per_sample': loops,
         'median_ns': statistics.median(sample_ns),
         'mean_ns': statistics.fmean(sample_ns),
@@ -737,6 +848,101 @@ def benchmark_case(case, *, samples=9, target_sample_seconds=0.08, warmup=3):
     if case.work_items:
         result['median_ns_per_work_item'] = result['median_ns'] / case.work_items
     return result
+
+
+def benchmark_case(case, *, samples=9, target_sample_seconds=0.08, warmup=3):
+    verify_info, loops = _calibrate_case(
+        case, target_sample_seconds=target_sample_seconds, warmup=warmup)
+
+    sample_ns = []
+    last_result = None
+    gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        for _ in range(samples):
+            last_result, elapsed = _time_case_sample(case, loops)
+            sample_ns.append(elapsed / loops)
+    finally:
+        if gc_was_enabled:
+            gc.enable()
+
+    return _result_row(
+        case, verify_info=verify_info, loops=loops,
+        sample_ns=sample_ns, last_result=last_result)
+
+
+def benchmark_case_group(cases, *, samples=9, target_sample_seconds=0.08,
+                         warmup=3):
+    """Benchmark competing backends in rotating order for paired ratios."""
+    calibrated = {}
+    for case in cases:
+        verify_info, loops = _calibrate_case(
+            case,
+            target_sample_seconds=target_sample_seconds,
+            warmup=warmup,
+        )
+        calibrated[case.backend] = {
+            'case': case,
+            'verify_info': verify_info,
+            'loops': loops,
+            'sample_ns': [],
+            'last_result': None,
+        }
+
+    backend_names = [case.backend for case in cases]
+    gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        for sample_idx in range(samples):
+            offset = sample_idx % len(backend_names)
+            order = backend_names[offset:] + backend_names[:offset]
+            if (sample_idx // len(backend_names)) % 2:
+                order = list(reversed(order))
+            for backend in order:
+                state = calibrated[backend]
+                result, elapsed = _time_case_sample(
+                    state['case'], state['loops'])
+                state['last_result'] = result
+                state['sample_ns'].append(elapsed / state['loops'])
+    finally:
+        if gc_was_enabled:
+            gc.enable()
+
+    rows = []
+    for backend in backend_names:
+        state = calibrated[backend]
+        rows.append(_result_row(
+            state['case'],
+            verify_info=state['verify_info'],
+            loops=state['loops'],
+            sample_ns=state['sample_ns'],
+            last_result=state['last_result'],
+        ))
+
+    paired = []
+    rust = calibrated.get('rust')
+    if rust is not None:
+        for comparator in backend_names:
+            if comparator == 'rust':
+                continue
+            other = calibrated[comparator]
+            ratios = [
+                rust_ns / comparator_ns
+                for rust_ns, comparator_ns in zip(
+                    rust['sample_ns'], other['sample_ns'], strict=True)
+            ]
+            paired.append({
+                'case': cases[0].spec.name,
+                'family': cases[0].spec.family,
+                'comparator': comparator,
+                'ratio_method': 'paired-rotating-order-samples',
+                'samples': len(ratios),
+                'rust_over_comparator_sample_ratios': ratios,
+                'rust_over_comparator_median': statistics.median(ratios),
+                'rust_over_comparator_p05': _percentile(ratios, 0.05),
+                'rust_over_comparator_p95': _percentile(ratios, 0.95),
+            })
+    return rows, paired
 
 
 def _extension_metadata():
@@ -759,6 +965,19 @@ def _optional_distribution_version(name):
         return None
 
 
+def _module_artifact_metadata(name):
+    module = _optional_module(name)
+    if module is None:
+        return None
+    path = Path(module.__file__).resolve()
+    return {
+        'module': name,
+        'path': str(path),
+        'sha256': hashlib.sha256(path.read_bytes()).hexdigest()
+        if path.is_file() else None,
+    }
+
+
 def environment_metadata():
     affinity = None
     if hasattr(os, 'sched_getaffinity'):
@@ -774,39 +993,146 @@ def environment_metadata():
         'optional_backend_versions': {
             'pycocotools': _optional_distribution_version('pycocotools'),
         },
+        'backend_artifacts': {
+            'legacy': {
+                name: _module_artifact_metadata(name)
+                for name in [
+                    'kwimage_ext.structs._boxes_backend.cython_boxes_legacy',
+                    'kwimage_ext.structs._mask_backend.cython_mask_legacy',
+                    'kwimage_ext.algo._nms_backend.cpu_nms_legacy',
+                    'kwimage_ext.algo._nms_backend.cpu_soft_nms_legacy',
+                ]
+            },
+            'pycocotools': {
+                'mask': _module_artifact_metadata('pycocotools.mask'),
+                '_mask': _module_artifact_metadata('pycocotools._mask'),
+            },
+        },
         'cpu_affinity': affinity,
         'rust_extension': _extension_metadata(),
     }
 
 
-def run_suite(case_names=None, *, backends='auto', seed=0, samples=9,
+def run_suite(case_names=None, *, backends='auto', seed=0, seeds=None, samples=9,
               target_sample_seconds=0.08, warmup=3):
     if case_names is None:
         case_names = [spec.name for spec in CASE_SPECS]
+    if seeds is None:
+        seeds = [seed]
+    seeds = list(seeds)
+    if not seeds:
+        raise ValueError('at least one benchmark seed is required')
     rows = []
+    paired_comparisons = []
     skipped = []
     for name in case_names:
-        if backends == 'auto':
-            selected = available_backends(name, seed=seed)
-        else:
-            selected = list(backends)
-        for backend in selected:
-            try:
-                case = prepare_case(name, backend=backend, seed=seed)
-            except LookupError as ex:
-                skipped.append({'case': name, 'backend': backend, 'reason': str(ex)})
+        per_backend_seed_rows = {}
+        per_pair_seed_rows = {}
+        for fixture_seed in seeds:
+            if backends == 'auto':
+                selected = available_backends(name, seed=fixture_seed)
+            else:
+                selected = list(backends)
+            cases = []
+            for backend in selected:
+                try:
+                    cases.append(prepare_case(
+                        name, backend=backend, seed=fixture_seed))
+                except LookupError as ex:
+                    skipped.append({
+                        'case': name,
+                        'backend': backend,
+                        'seed': fixture_seed,
+                        'reason': str(ex),
+                    })
+            if not cases:
                 continue
-            rows.append(benchmark_case(
-                case, samples=samples,
+            seed_rows, seed_pairs = benchmark_case_group(
+                cases,
+                samples=samples,
                 target_sample_seconds=target_sample_seconds,
                 warmup=warmup,
-            ))
+            )
+            for row in seed_rows:
+                row['seed'] = fixture_seed
+                per_backend_seed_rows.setdefault(row['backend'], []).append(row)
+            for pair in seed_pairs:
+                pair['seed'] = fixture_seed
+                key = pair['comparator']
+                per_pair_seed_rows.setdefault(key, []).append(pair)
+
+        for backend, seed_rows in per_backend_seed_rows.items():
+            first = seed_rows[0]
+            all_samples = [
+                value
+                for seed_row in seed_rows
+                for value in seed_row['sample_ns']
+            ]
+            row = dict(first)
+            row['seed'] = None
+            row['seeds'] = [seed_row['seed'] for seed_row in seed_rows]
+            row['samples_per_seed'] = samples
+            row['samples'] = len(all_samples)
+            row['sample_ns'] = all_samples
+            row['loops_per_sample'] = None
+            row['loops_per_seed'] = {
+                str(seed_row['seed']): seed_row['loops_per_sample']
+                for seed_row in seed_rows
+            }
+            row['median_ns'] = statistics.median(all_samples)
+            row['mean_ns'] = statistics.fmean(all_samples)
+            row['min_ns'] = min(all_samples)
+            row['p05_ns'] = _percentile(all_samples, 0.05)
+            row['p95_ns'] = _percentile(all_samples, 0.95)
+            row['max_ns'] = max(all_samples)
+            row['stdev_ns'] = (
+                statistics.pstdev(all_samples) if len(all_samples) > 1 else 0.0
+            )
+            row['result_digest'] = _digest_value([
+                seed_row['result_digest'] for seed_row in seed_rows
+            ])
+            row['verification_by_seed'] = {
+                str(seed_row['seed']): seed_row['verification']
+                for seed_row in seed_rows
+            }
+            row['traits_by_seed'] = {
+                str(seed_row['seed']): seed_row['traits']
+                for seed_row in seed_rows
+            }
+            if row.get('work_items'):
+                row['median_ns_per_work_item'] = (
+                    row['median_ns'] / row['work_items']
+                )
+            rows.append(row)
+
+        for comparator, seed_pairs in per_pair_seed_rows.items():
+            ratios = [
+                value
+                for seed_pair in seed_pairs
+                for value in seed_pair['rust_over_comparator_sample_ratios']
+            ]
+            paired_comparisons.append({
+                'case': name,
+                'family': CASE_BY_NAME[name].family,
+                'comparator': comparator,
+                'ratio_method': 'paired-rotating-order-samples-multi-seed',
+                'seeds': [seed_pair['seed'] for seed_pair in seed_pairs],
+                'samples_per_seed': samples,
+                'samples': len(ratios),
+                'rust_over_comparator_sample_ratios': ratios,
+                'rust_over_comparator_median': statistics.median(ratios),
+                'rust_over_comparator_p05': _percentile(ratios, 0.05),
+                'rust_over_comparator_p95': _percentile(ratios, 0.95),
+            })
     return {
-        'schema_version': 2,
+        'schema_version': 3,
         'generated_at_unix': time.time(),
-        'seed': seed,
+        'seed': seed if len(seeds) == 1 else None,
+        'seeds': seeds,
+        'timing_method': 'paired rotating backend order within each sample round',
         'environment': environment_metadata(),
         'results': rows,
+        'paired_comparisons': paired_comparisons,
         'skipped': skipped,
     }
 
@@ -850,12 +1176,26 @@ def _parse_case_names(text):
     return names
 
 
+def _parse_seeds(text):
+    if text is None:
+        return None
+    seeds = [int(part.strip()) for part in text.split(',') if part.strip()]
+    if not seeds:
+        raise SystemExit('--seeds must contain at least one integer')
+    return seeds
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--list', action='store_true', help='List benchmark cases and exit.')
     parser.add_argument('--cases', default='all', help='Comma-separated cases, or all.')
     parser.add_argument('--backend', choices=['auto', 'rust', 'legacy', 'pycocotools', 'python'], default='auto')
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument(
+        '--seeds',
+        help='Comma-separated fixture seeds for the benchmark suite. '
+             'Canonical evidence uses multiple seeds; perf workload uses --seed.',
+    )
     parser.add_argument('--samples', type=int, default=9)
     parser.add_argument('--warmup', type=int, default=3)
     parser.add_argument('--target-sample-seconds', type=float, default=0.08)
@@ -892,6 +1232,7 @@ def main(argv=None):
         case_names,
         backends=selected_backends,
         seed=args.seed,
+        seeds=_parse_seeds(args.seeds),
         samples=samples,
         target_sample_seconds=target_seconds,
         warmup=args.warmup,

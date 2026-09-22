@@ -6,8 +6,10 @@ set -euo pipefail
 # Rust port is being validated against the legacy kernels. Legacy modules are
 # built under explicit *_legacy names so they can never shadow the public
 # Rust-first compatibility modules.
-python dev/clean_stale_legacy_artifacts.py
-python -m pip install -r requirements/build.txt
+PYTHON_EXE="${KWIMAGE_EXT_LEGACY_PYTHON:-${PYTHON:-python}}"
+
+"$PYTHON_EXE" dev/clean_stale_legacy_artifacts.py
+"$PYTHON_EXE" -m pip install -r requirements/build.txt
 
 # scikit-build caches interpreter, Cython, and NumPy discovery under _skbuild.
 # Reusing that directory after switching virtualenvs can silently combine the
@@ -15,8 +17,8 @@ python -m pip install -r requirements/build.txt
 # A parity oracle must never be built from that mixed state.
 rm -rf _skbuild _cmake_test_compile
 
-PYTHON_EXE="$(python -c 'import sys; print(sys.executable)')"
-PYTHON_SCRIPTS="$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')"
+PYTHON_EXE="$($PYTHON_EXE -c 'import sys; print(sys.executable)')"
+PYTHON_SCRIPTS="$($PYTHON_EXE -c 'import sysconfig; print(sysconfig.get_path("scripts"))')"
 if [[ "${OS:-}" == "Windows_NT" ]]; then
     CYTHON_EXE="${PYTHON_SCRIPTS}/cython.exe"
 else
@@ -32,7 +34,7 @@ fi
 # Validate that Cython is importable by the same interpreter before asking
 # CMake to use its console script. This produces a direct diagnostic instead
 # of letting FindCython discover a stale executable elsewhere on PATH.
-python - <<'PY'
+"$PYTHON_EXE" - <<'PY'
 import Cython
 import numpy
 import sys
@@ -47,13 +49,13 @@ printf 'legacy reference Cython executable: %s\n' "$CYTHON_EXE"
 # into an unrelated GPU build as a side effect. Pin FindCython to the active
 # interpreter environment as an additional guard against PATH/cache leakage.
 export CMAKE_ARGS="${CMAKE_ARGS:-} -DUSE_CUDA=OFF -DCYTHON_EXECUTABLE:FILEPATH=${CYTHON_EXE}"
-python setup.py build_ext --inplace
+"$PYTHON_EXE" setup.py build_ext --inplace
 
 # Fail here, with one direct diagnostic, if the Cython-generated initializer
 # does not agree with the intentionally renamed extension filename.  The
 # parity suite should only start after all four reference modules are proven
 # importable from this source checkout.
-python - <<'PY'
+"$PYTHON_EXE" - <<'PY'
 import importlib
 
 module_names = [

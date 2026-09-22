@@ -30,10 +30,12 @@ import time
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BENCH_SCRIPT = REPO_ROOT / 'dev' / 'benchmarks' / 'rust_kernel_benchmarks.py'
+CANONICAL_BENCHMARK_SEEDS = (0, 1, 2, 3, 4)
 DEFAULT_PERF_CASES = (
     'boxes_iou_large',
     'cpu_nms_sparse_1000',
     'soft_nms_gaussian_512',
+    'mask_encode_sparse_128x128x16',
     'mask_encode_512x512x4',
     'mask_encode_structured_512x512x4',
     'mask_iou_fragmented_48',
@@ -206,7 +208,11 @@ def _snapshot_source(bundle):
         REPO_ROOT / 'rust' / 'Cargo.toml',
         REPO_ROOT / 'rust' / 'Cargo.lock',
         REPO_ROOT / 'pyproject.toml',
+        REPO_ROOT / 'setup.py',
+        REPO_ROOT / 'dev' / 'build_legacy.sh',
+        REPO_ROOT / 'dev' / 'clean_stale_legacy_artifacts.py',
         REPO_ROOT / 'dev' / 'benchmarks' / 'rust_kernel_benchmarks.py',
+        REPO_ROOT / 'dev' / 'profiling' / 'README.md',
         REPO_ROOT / 'dev' / 'profiling' / 'profile_rust_kernels.py',
     ]
     paths.extend(sorted((REPO_ROOT / 'rust' / 'src').glob('*.rs')))
@@ -315,6 +321,95 @@ def _rebuild_profiled(bundle, records, env):
         ],
     }, indent=2, sort_keys=True) + '\n')
     return result
+
+
+def _legacy_source_hashes():
+    paths = [
+        REPO_ROOT / 'setup.py',
+        REPO_ROOT / 'CMakeLists.txt',
+        REPO_ROOT / 'kwimage_ext' / 'structs' / '_boxes_backend' / 'cython_boxes.pyx',
+        REPO_ROOT / 'kwimage_ext' / 'structs' / '_mask_backend' / 'cython_mask.pyx',
+        REPO_ROOT / 'kwimage_ext' / 'structs' / '_mask_backend' / 'maskApi.c',
+        REPO_ROOT / 'kwimage_ext' / 'structs' / '_mask_backend' / 'maskApi.h',
+        REPO_ROOT / 'kwimage_ext' / 'algo' / '_nms_backend' / 'cpu_nms.pyx',
+        REPO_ROOT / 'kwimage_ext' / 'algo' / '_nms_backend' / 'cpu_soft_nms.pyx',
+    ]
+    return {
+        str(path.relative_to(REPO_ROOT)): _sha256(path)
+        for path in paths if path.is_file()
+    }
+
+
+def _rebuild_legacy_reference(bundle, records, env):
+    """Build and fingerprint the historical Cython/C comparator in-place."""
+    build_dir = bundle / 'build'
+    build_dir.mkdir(parents=True, exist_ok=True)
+    build_env = dict(env)
+    ignored_build_flags = {}
+    for key in ('CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'CMAKE_ARGS'):
+        if key in build_env:
+            ignored_build_flags[key] = build_env.pop(key)
+    # Pin the helper to the same interpreter that will execute the benchmark.
+    # This avoids accidentally building the comparator with a different
+    # ``python`` found earlier on PATH.
+    build_env['KWIMAGE_EXT_LEGACY_PYTHON'] = sys.executable
+    result = _run(
+        ['bash', str(REPO_ROOT / 'dev' / 'build_legacy.sh')],
+        env=build_env,
+        stdout_path=build_dir / 'legacy-reference.txt',
+        stderr_path=build_dir / 'legacy-reference.stderr.txt',
+        timeout=900,
+    )
+    records.append({k: v for k, v in result.items() if k not in {'stdout', 'stderr'}})
+
+    artifact_probe = {}
+    if result['returncode'] == 0:
+        code = r'''import hashlib
+import importlib
+import json
+from pathlib import Path
+
+names = [
+    'kwimage_ext.structs._boxes_backend.cython_boxes_legacy',
+    'kwimage_ext.structs._mask_backend.cython_mask_legacy',
+    'kwimage_ext.algo._nms_backend.cpu_nms_legacy',
+    'kwimage_ext.algo._nms_backend.cpu_soft_nms_legacy',
+]
+payload = {}
+for name in names:
+    module = importlib.import_module(name)
+    path = Path(module.__file__).resolve()
+    payload[name] = {
+        'path': str(path),
+        'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+print(json.dumps(payload, sort_keys=True))
+'''
+        probe = _run([sys.executable, '-c', code], env=build_env, timeout=60)
+        records.append({k: v for k, v in probe.items() if k not in {'stdout', 'stderr'}})
+        if probe['returncode'] == 0:
+            try:
+                artifact_probe = json.loads((probe['stdout'] or '').strip())
+            except json.JSONDecodeError:
+                artifact_probe = {'parse_error': probe.get('stdout')}
+        else:
+            artifact_probe = {'probe_error': probe.get('stderr')}
+
+    payload = {
+        'ok': result['returncode'] == 0 and bool(artifact_probe)
+              and 'parse_error' not in artifact_probe
+              and 'probe_error' not in artifact_probe,
+        'build_returncode': result['returncode'],
+        'repo_root': str(REPO_ROOT),
+        'python_executable': sys.executable,
+        'source_hashes': _legacy_source_hashes(),
+        'artifacts': artifact_probe,
+        'ignored_ambient_build_flags': ignored_build_flags,
+        'policy': 'same-checkout-cpu-only-legacy-reference',
+    }
+    (build_dir / 'legacy-reference.json').write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + '\n')
+    return payload
 
 
 def _probe_version_state(bundle, records, env):
@@ -434,7 +529,8 @@ def _run_correctness_gate(bundle, records, env, quick, version_state):
     return status
 
 
-def _benchmark_provenance(bundle, benchmark_json):
+def _benchmark_provenance(
+        bundle, benchmark_json, required_pycocotools_version=None):
     # Require benchmark source and compiled extension versions to agree.
     build_policy_path = bundle / 'build' / 'profile-build-env.json'
     build_policy = (
@@ -454,10 +550,19 @@ def _benchmark_provenance(bundle, benchmark_json):
             build_policy.get('RUSTFLAGS') == PORTABLE_PROFILE_RUSTFLAGS
         ),
         'build_policy': build_policy,
+        'legacy_reference_rebuilt': False,
+        'legacy_claim_verified': False,
+        'legacy_artifact_matches': {},
+        'pycocotools_claim_verified': False,
+        'pycocotools_version': None,
+        'pycocotools_extension_sha256': None,
+        'required_pycocotools_version': required_pycocotools_version,
+        'pycocotools_version_requirement_met': None,
     }
     if benchmark_json.exists():
         payload = json.loads(benchmark_json.read_text())
-        ext = payload.get('environment', {}).get('rust_extension', {})
+        benchmark_env = payload.get('environment', {})
+        ext = benchmark_env.get('rust_extension', {})
         status['extension_version'] = ext.get('version')
         status['extension_path'] = ext.get('path')
         status['extension_sha256'] = ext.get('sha256')
@@ -465,6 +570,54 @@ def _benchmark_provenance(bundle, benchmark_json):
             status['source_version'] is not None and
             status['extension_version'] == status['source_version']
         )
+
+        legacy_build_path = bundle / 'build' / 'legacy-reference.json'
+        legacy_build = (
+            json.loads(legacy_build_path.read_text())
+            if legacy_build_path.exists() else None
+        )
+        status['legacy_reference_rebuilt'] = bool(
+            legacy_build and legacy_build.get('ok'))
+        benchmark_legacy = (
+            benchmark_env.get('backend_artifacts', {}).get('legacy', {}))
+        built_legacy = (legacy_build or {}).get('artifacts', {})
+        for name, built in built_legacy.items():
+            measured = benchmark_legacy.get(name) or {}
+            status['legacy_artifact_matches'][name] = bool(
+                built.get('sha256') and
+                built.get('sha256') == measured.get('sha256')
+            )
+        has_legacy_rows = any(
+            row.get('backend') == 'legacy' for row in payload.get('results', []))
+        status['legacy_claim_verified'] = bool(
+            has_legacy_rows and
+            status['legacy_reference_rebuilt'] and
+            status['legacy_artifact_matches'] and
+            all(status['legacy_artifact_matches'].values())
+        )
+
+        pycoco = benchmark_env.get('backend_artifacts', {}).get('pycocotools', {})
+        pycoco_ext = pycoco.get('_mask') or {}
+        status['pycocotools_version'] = (
+            benchmark_env.get('optional_backend_versions', {}).get('pycocotools'))
+        status['pycocotools_extension_sha256'] = pycoco_ext.get('sha256')
+        has_pycoco_rows = any(
+            row.get('backend') == 'pycocotools'
+            for row in payload.get('results', []))
+        status['pycocotools_claim_verified'] = bool(
+            has_pycoco_rows and
+            status['pycocotools_version'] and
+            status['pycocotools_extension_sha256']
+        )
+        if required_pycocotools_version is not None:
+            status['pycocotools_version_requirement_met'] = bool(
+                status['pycocotools_claim_verified'] and
+                status['pycocotools_version'] == required_pycocotools_version
+            )
+            status['ok'] = bool(
+                status['ok'] and
+                status['pycocotools_version_requirement_met']
+            )
     path = bundle / 'benchmarks' / 'provenance.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(status, indent=2, sort_keys=True) + '\n')
@@ -477,6 +630,7 @@ def _run_benchmarks(bundle, records, env, quick, cases):
         sys.executable, str(BENCH_SCRIPT),
         '--backend', 'auto',
         '--output-json', str(output),
+        '--seeds', ','.join(map(str, CANONICAL_BENCHMARK_SEEDS[:1] if quick else CANONICAL_BENCHMARK_SEEDS)),
     ]
     if cases:
         command.extend(['--cases', ','.join(cases)])
@@ -500,6 +654,7 @@ def _write_benchmark_csv(bundle, benchmark_json):
     rows = payload.get('results', [])
     columns = [
         'case', 'family', 'backend', 'samples', 'loops_per_sample',
+        'seeds_json', 'loops_per_seed_json',
         'median_ns', 'mean_ns', 'min_ns', 'p05_ns', 'p95_ns', 'max_ns',
         'stdev_ns', 'work_items', 'work_unit', 'median_ns_per_work_item',
         'result_digest', 'verification_comparator',
@@ -512,6 +667,9 @@ def _write_benchmark_csv(bundle, benchmark_json):
         for row in rows:
             verification = row.get('verification', {})
             flat = {key: row.get(key) for key in columns}
+            flat['seeds_json'] = json.dumps(row.get('seeds', []))
+            flat['loops_per_seed_json'] = json.dumps(
+                row.get('loops_per_seed', {}), sort_keys=True)
             flat['verification_comparator'] = verification.get('comparator')
             flat['verification_comparators'] = json.dumps(
                 verification.get('comparators', []), sort_keys=True)
@@ -536,6 +694,10 @@ def _comparison_rows(payload):
         by_case.setdefault(row['case'], {})[row['backend']] = row
 
     rows = []
+    paired_by_key = {
+        (item['case'], item['comparator']): item
+        for item in payload.get('paired_comparisons', [])
+    }
     comparator_order = ('legacy', 'pycocotools', 'python')
     for case in [row['case'] for row in payload.get('results', []) if row['backend'] == 'rust']:
         backend_rows = by_case[case]
@@ -546,7 +708,21 @@ def _comparison_rows(payload):
             comparator = backend_rows.get(comparator_name)
             if comparator is None:
                 continue
-            ratio = rust['median_ns'] / comparator['median_ns']
+            paired = paired_by_key.get((case, comparator_name))
+            if paired is None:
+                ratio = rust['median_ns'] / comparator['median_ns']
+                ratio_method = 'ratio-of-independent-medians'
+                ratio_p05 = None
+                ratio_p95 = None
+                ratio_samples = None
+                ratio_seeds = None
+            else:
+                ratio = paired['rust_over_comparator_median']
+                ratio_method = paired.get('ratio_method')
+                ratio_p05 = paired.get('rust_over_comparator_p05')
+                ratio_p95 = paired.get('rust_over_comparator_p95')
+                ratio_samples = paired.get('samples')
+                ratio_seeds = paired.get('seeds')
             rows.append({
                 'case': case,
                 'family': rust.get('family'),
@@ -554,6 +730,11 @@ def _comparison_rows(payload):
                 'rust_median_ns': rust['median_ns'],
                 'comparator_median_ns': comparator['median_ns'],
                 'rust_over_comparator': ratio,
+                'ratio_method': ratio_method,
+                'ratio_p05': ratio_p05,
+                'ratio_p95': ratio_p95,
+                'ratio_samples': ratio_samples,
+                'ratio_seeds': ratio_seeds,
                 'observed_band': _comparison_band(ratio),
                 'rust_p05_ns': rust.get('p05_ns'),
                 'rust_p95_ns': rust.get('p95_ns'),
@@ -564,19 +745,65 @@ def _comparison_rows(payload):
     return rows
 
 
+def _comparator_claim_provenance_verified(provenance, comparator):
+    """Whether the native artifacts have enough provenance for a claim."""
+    rust_verified = bool(
+        provenance.get('ok') and provenance.get('portable_build_verified'))
+    if comparator == 'legacy':
+        comparator_verified = provenance.get('legacy_claim_verified') is True
+    elif comparator == 'pycocotools':
+        comparator_verified = provenance.get('pycocotools_claim_verified') is True
+    elif comparator == 'python':
+        comparator_verified = True
+    else:
+        comparator_verified = False
+    return rust_verified and comparator_verified
+
+
+def _comparison_claim_verified(provenance, row):
+    """Whether one timing row is suitable for the canonical release claim."""
+    seeds = row.get('ratio_seeds') or []
+    paired_multi_seed = bool(
+        row.get('ratio_method') == 'paired-rotating-order-samples-multi-seed'
+        and len(set(seeds)) >= 2
+        and row.get('ratio_samples')
+        and row.get('ratio_p05') is not None
+        and row.get('ratio_p95') is not None
+    )
+    return bool(
+        paired_multi_seed and
+        _comparator_claim_provenance_verified(
+            provenance, row.get('comparator'))
+    )
+
+
 def _write_comparison_outputs(bundle, benchmark_json):
     if not benchmark_json.exists():
         return []
     payload = json.loads(benchmark_json.read_text())
     rows = _comparison_rows(payload)
+    provenance_path = bundle / 'benchmarks' / 'provenance.json'
+    provenance = (
+        json.loads(provenance_path.read_text())
+        if provenance_path.exists() else {}
+    )
+    for row in rows:
+        row['claim_verified'] = _comparison_claim_verified(provenance, row)
     out_json = bundle / 'benchmarks' / 'comparisons.json'
     out_json.write_text(json.dumps({
-        'schema_version': 1,
+        'schema_version': 2,
         'interpretation': {
             'faster_by_at_least_5pct': 'rust/comparator <= 0.95',
             'within_5pct': '0.95 < rust/comparator < 1.05',
             'slower_by_at_least_5pct': 'rust/comparator >= 1.05',
-            'note': 'Bands describe observed medians; they are not statistical significance tests.',
+            'note': (
+                'Canonical schema-v3 benchmark rows use the median of paired '
+                'Rust/comparator sample ratios collected in rotating backend '
+                'order across multiple fixture seeds. Bands remain descriptive '
+                'and are not statistical significance tests. claim_verified '
+                'also requires a portable same-source Rust build and verified '
+                'comparator provenance.'
+            ),
         },
         'rows': rows,
     }, indent=2, sort_keys=True) + '\n')
@@ -585,6 +812,8 @@ def _write_comparison_outputs(bundle, benchmark_json):
     columns = [
         'case', 'family', 'comparator', 'rust_median_ns',
         'comparator_median_ns', 'rust_over_comparator', 'observed_band',
+        'ratio_method', 'ratio_p05', 'ratio_p95', 'ratio_samples',
+        'ratio_seeds_json', 'claim_verified',
         'rust_p05_ns', 'rust_p95_ns', 'comparator_p05_ns',
         'comparator_p95_ns', 'traits_json',
     ]
@@ -593,6 +822,7 @@ def _write_comparison_outputs(bundle, benchmark_json):
         writer.writeheader()
         for row in rows:
             flat = {key: row.get(key) for key in columns}
+            flat['ratio_seeds_json'] = json.dumps(row.get('ratio_seeds'))
             flat['traits_json'] = json.dumps(row.get('traits', {}), sort_keys=True)
             writer.writerow(flat)
     return rows
@@ -688,6 +918,41 @@ def _capture_extension_artifact(bundle, benchmark_json, records, env):
             _capture_text(bundle, f'extension/{name}', command, records, env=env)
 
 
+def _capture_comparator_artifacts(bundle, benchmark_json):
+    if not benchmark_json.exists():
+        return
+    payload = json.loads(benchmark_json.read_text())
+    backend_artifacts = payload.get('environment', {}).get('backend_artifacts', {})
+    out_root = bundle / 'comparators'
+    metadata = {}
+    for group_name, group in backend_artifacts.items():
+        group_meta = {}
+        for name, item in (group or {}).items():
+            if not item:
+                group_meta[name] = None
+                continue
+            path = Path(item.get('path') or '')
+            copied_rel = None
+            copied_sha256 = None
+            if path.is_file():
+                safe_name = name.replace('.', '_') + path.suffix
+                copied = out_root / group_name / safe_name
+                copied.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, copied)
+                copied_rel = str(copied.relative_to(bundle))
+                copied_sha256 = _sha256(copied)
+            group_meta[name] = {
+                **item,
+                'copied_path': copied_rel,
+                'copied_sha256': copied_sha256,
+            }
+        metadata[group_name] = group_meta
+    if metadata:
+        out_root.mkdir(parents=True, exist_ok=True)
+        (out_root / 'metadata.json').write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + '\n')
+
+
 def _format_us(ns):
     return f'{ns / 1000.0:.3f}'
 
@@ -722,6 +987,11 @@ def _write_summary(bundle, benchmark_json, correctness_result, perf_results):
     lines.append('')
     if benchmark_json.exists():
         payload = json.loads(benchmark_json.read_text())
+        provenance_path = bundle / 'benchmarks' / 'provenance.json'
+        provenance = (
+            json.loads(provenance_path.read_text())
+            if provenance_path.exists() else {}
+        )
         metadata_path = bundle / 'metadata.json'
         source_version = None
         if metadata_path.exists():
@@ -744,7 +1014,22 @@ def _write_summary(bundle, benchmark_json, correctness_result, perf_results):
         lines.extend([
             '## Comparator availability',
             '',
+            '- legacy Cython/C: same-checkout rebuild verified'
+            if provenance.get('legacy_claim_verified')
+            else '- legacy Cython/C: not source-current verified; do not use legacy rows for a same-checkout performance claim',
             f'- pycocotools: `{pycoco_version}`' if pycoco_version else '- pycocotools: unavailable; no direct pycocotools performance claim can be made from this bundle.',
+            '- pycocotools binary fingerprint captured'
+            if provenance.get('pycocotools_claim_verified')
+            else '- pycocotools binary fingerprint unavailable',
+            (
+                f'- required pycocotools version: '
+                f'`{provenance.get("required_pycocotools_version")}`; '
+                f'matched: `{provenance.get("pycocotools_version_requirement_met")}`'
+            )
+            if provenance.get('required_pycocotools_version') is not None
+            else '- required pycocotools version: not specified',
+            f'- fixture seeds: `{payload.get("seeds")}`',
+            f'- comparison timing: `{payload.get("timing_method", "independent backend blocks")}`',
             '',
             '## Microbenchmarks',
             '',
@@ -752,16 +1037,22 @@ def _write_summary(bundle, benchmark_json, correctness_result, perf_results):
             '| --- | ---: | --- | ---: | ---: | --- |',
         ])
         for row in comparison_rows:
+            claim_status = (
+                'yes' if _comparison_claim_verified(provenance, row) else 'no'
+            )
             lines.append(
                 f'| `{row["case"]}` | {_format_us(row["rust_median_ns"])} | '
                 f'{row["comparator"]} | {_format_us(row["comparator_median_ns"])} | '
-                f'{row["rust_over_comparator"]:.3f}x | {row["observed_band"]} |')
+                f'{row["rust_over_comparator"]:.3f}x | '
+                f'{row["observed_band"]} (claim-ready: {claim_status}) |')
         if not comparison_rows:
             lines.append('| _no comparator rows available_ | | | | | |')
         lines.extend([
             '',
             'Lower `rust/comparator` is faster.',
-            'The ±5% band is a conservative descriptive tolerance around observed medians, not a significance test.',
+            'For schema-v3 evidence, `rust/comparator` is the median of paired '
+            'sample ratios gathered in rotating backend order across the recorded seeds.',
+            'The ±5% band is a conservative descriptive tolerance around the observed ratio, not a significance test.',
             '',
             '## Comparator coverage',
             '',
@@ -779,8 +1070,11 @@ def _write_summary(bundle, benchmark_json, correctness_result, perf_results):
                 )
             }
             worst = max(rows, key=lambda row: row['rust_over_comparator'])
+            claim_ready = bool(rows) and all(
+                _comparison_claim_verified(provenance, row) for row in rows)
             lines.append(
-                f'- `{comparator}`: {len(rows)} compared cases; '
+                f'- `{comparator}` ({"claim-ready" if claim_ready else "provenance-unverified"}): '
+                f'{len(rows)} compared cases; '
                 f'{counts["faster_by_at_least_5pct"]} >=5% faster, '
                 f'{counts["within_5pct"]} within 5%, '
                 f'{counts["slower_by_at_least_5pct"]} >=5% slower. '
@@ -803,8 +1097,10 @@ def _write_summary(bundle, benchmark_json, correctness_result, perf_results):
         '## Important provenance',
         '',
         '- `benchmarks/results.json` records the exact imported Rust extension path and SHA-256.',
-        '- `benchmarks/comparisons.{json,csv}` records every Rust/comparator pair, including direct pycocotools rows when installed.',
+        '- `benchmarks/comparisons.{json,csv}` records every Rust/comparator pair and the paired-ratio method used for claims.',
         '- `extension/` contains that compiled extension and ELF metadata when available.',
+        '- `comparators/` contains copied legacy/pycocotools comparator artifacts and SHA-256 fingerprints when available.',
+        '- `build/legacy-reference.json` records the same-checkout legacy rebuild and source hashes.',
         '- `source/` snapshots the Rust kernels and benchmark/profiling front doors.',
         '- `git/` records HEAD, dirty status, and the working-tree diff.',
         '- Raw perf counter output and sampled reports are under `perf/<case>/`.',
@@ -849,6 +1145,16 @@ def main(argv=None):
     parser.add_argument('--no-perf', action='store_true')
     parser.add_argument('--rebuild-profiled', action='store_true',
                         help='Run maturin develop --release with portable target-cpu=generic and debug info first.')
+    parser.add_argument(
+        '--skip-legacy-rebuild', action='store_true',
+        help='With --rebuild-profiled, do not rebuild the same-checkout legacy Cython/C reference. '
+             'Legacy benchmark rows will then be marked unverified for source-current claims.',
+    )
+    parser.add_argument(
+        '--require-pycocotools-version',
+        help='Fail the evidence run unless this exact pycocotools version is '
+             'installed, fingerprinted, and directly benchmarked.',
+    )
     parser.add_argument('--cases', help='Comma-separated benchmark cases; default all.')
     parser.add_argument('--perf-cases', default=','.join(DEFAULT_PERF_CASES),
                         help='Comma-separated cases for perf stat/record.')
@@ -885,9 +1191,25 @@ def main(argv=None):
         _capture_environment(bundle, commands, env)
 
         if args.rebuild_profiled:
-            rebuild = _rebuild_profiled(bundle, commands, env)
-            if rebuild['returncode'] != 0:
-                hard_failure = True
+            # Build the Cython reference first because its helper may install
+            # build requirements (including NumPy). Rust is then compiled
+            # against the final environment that will actually be benchmarked.
+            if not args.skip_legacy_rebuild:
+                legacy_rebuild = _rebuild_legacy_reference(bundle, commands, env)
+                if legacy_rebuild['ok'] is not True:
+                    hard_failure = True
+            if not hard_failure:
+                rebuild = _rebuild_profiled(bundle, commands, env)
+                if rebuild['returncode'] != 0:
+                    hard_failure = True
+            if not hard_failure:
+                _capture_text(
+                    bundle,
+                    'environment/pip-freeze-post-build.txt',
+                    [sys.executable, '-m', 'pip', 'freeze'],
+                    commands,
+                    env=env,
+                )
 
         version_state = None
         if not hard_failure:
@@ -914,13 +1236,18 @@ def main(argv=None):
                 hard_failure = True
 
         if benchmark_json.exists():
-            provenance = _benchmark_provenance(bundle, benchmark_json)
+            provenance = _benchmark_provenance(
+                bundle,
+                benchmark_json,
+                required_pycocotools_version=args.require_pycocotools_version,
+            )
             if provenance['ok'] is not True:
                 hard_failure = True
 
         _write_benchmark_csv(bundle, benchmark_json)
         _write_comparison_outputs(bundle, benchmark_json)
         _capture_extension_artifact(bundle, benchmark_json, commands, env)
+        _capture_comparator_artifacts(bundle, benchmark_json)
 
         can_perf = (
             not args.no_perf and not hard_failure and platform.system() == 'Linux'
