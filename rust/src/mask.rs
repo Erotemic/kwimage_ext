@@ -38,14 +38,83 @@ fn counts_to_bytes(counts: &[u32]) -> Vec<u8> {
     out
 }
 
-struct CompressedCounts<'a> {
+#[inline]
+fn for_each_compressed_count(
+    bytes: &[u8],
+    mut visit: impl FnMut(usize, u32),
+) -> PyResult<()> {
+    // Keep the compressed-RLE decoder as one tight monomorphized loop.  A
+    // previous stateful `next_count()` abstraction made fragmented RLEs pay a
+    // PyResult<Option<_>> round trip for every run; the claim-ready benchmark
+    // showed that cost in decode/area/merge.  Callers supply an inlined visitor
+    // so they can either materialize counts or consume them directly.
+    let mut p = 0usize;
+    let mut index = 0usize;
+    let mut previous_same_parity = [0u32; 2];
+    while p < bytes.len() && bytes[p] != 0 {
+        let byte = bytes[p];
+        if !(48..=111).contains(&byte) {
+            return Err(value_error("invalid compressed RLE character"));
+        }
+        let first = (byte - 48) as i64;
+        let mut x = first & 0x1f;
+        p += 1;
+        if first & 0x20 == 0 {
+            // Most fragmented-mask counts fit in one byte. Avoid entering the
+            // general variable-length loop for this overwhelmingly common
+            // case while preserving signed differential decoding.
+            if first & 0x10 != 0 {
+                x |= -1i64 << 5;
+            }
+        } else {
+            let mut k = 1usize;
+            loop {
+                if p >= bytes.len() {
+                    return Err(value_error("truncated compressed RLE counts"));
+                }
+                let byte = bytes[p];
+                if !(48..=111).contains(&byte) {
+                    return Err(value_error("invalid compressed RLE character"));
+                }
+                let c = (byte - 48) as i64;
+                x |= (c & 0x1f) << (5 * k);
+                let more = c & 0x20;
+                p += 1;
+                k += 1;
+                if more == 0 {
+                    if c & 0x10 != 0 {
+                        x |= -1i64 << (5 * k);
+                    }
+                    break;
+                }
+            }
+        }
+
+        let parity = index & 1;
+        if index > 2 {
+            x += previous_same_parity[parity] as i64;
+        }
+        if x < 0 || x > u32::MAX as i64 {
+            return Err(value_error("compressed RLE decoded outside uint32 range"));
+        }
+        let count = x as u32;
+        previous_same_parity[parity] = count;
+        visit(index, count);
+        index += 1;
+    }
+    Ok(())
+}
+
+
+struct CompressedCountCursor<'a> {
     bytes: &'a [u8],
     p: usize,
     index: usize,
     previous_same_parity: [u32; 2],
+    error: Option<&'static str>,
 }
 
-impl<'a> CompressedCounts<'a> {
+impl<'a> CompressedCountCursor<'a> {
     #[inline]
     fn new(bytes: &'a [u8]) -> Self {
         Self {
@@ -53,34 +122,55 @@ impl<'a> CompressedCounts<'a> {
             p: 0,
             index: 0,
             previous_same_parity: [0; 2],
+            error: None,
         }
     }
 
-    #[inline]
-    fn next_count(&mut self) -> PyResult<Option<u32>> {
+    #[inline(always)]
+    fn next_count(&mut self) -> Option<u32> {
+        // A decode error is terminal: the caller treats this `None` exactly
+        // like end-of-stream and calls `finish()` before returning.  It never
+        // invokes the cursor again, so checking `error` here would add a
+        // redundant branch to every successfully decoded count.
         if self.p >= self.bytes.len() || self.bytes[self.p] == 0 {
-            return Ok(None);
+            return None;
         }
 
-        let mut x: i64 = 0;
-        let mut k = 0usize;
-        loop {
-            if self.p >= self.bytes.len() {
-                return Err(value_error("truncated compressed RLE counts"));
+        let byte = self.bytes[self.p];
+        if !(48..=111).contains(&byte) {
+            self.error = Some("invalid compressed RLE character");
+            return None;
+        }
+        let first = (byte - 48) as i64;
+        let mut x = first & 0x1f;
+        self.p += 1;
+        if first & 0x20 == 0 {
+            if first & 0x10 != 0 {
+                x |= -1i64 << 5;
             }
-            let c = (self.bytes[self.p] as i64) - 48;
-            if !(0..=63).contains(&c) {
-                return Err(value_error("invalid compressed RLE character"));
-            }
-            x |= (c & 0x1f) << (5 * k);
-            let more = c & 0x20;
-            self.p += 1;
-            k += 1;
-            if more == 0 {
-                if c & 0x10 != 0 {
-                    x |= -1i64 << (5 * k);
+        } else {
+            let mut k = 1usize;
+            loop {
+                if self.p >= self.bytes.len() {
+                    self.error = Some("truncated compressed RLE counts");
+                    return None;
                 }
-                break;
+                let byte = self.bytes[self.p];
+                if !(48..=111).contains(&byte) {
+                    self.error = Some("invalid compressed RLE character");
+                    return None;
+                }
+                let c = (byte - 48) as i64;
+                x |= (c & 0x1f) << (5 * k);
+                let more = c & 0x20;
+                self.p += 1;
+                k += 1;
+                if more == 0 {
+                    if c & 0x10 != 0 {
+                        x |= -1i64 << (5 * k);
+                    }
+                    break;
+                }
             }
         }
 
@@ -89,25 +179,101 @@ impl<'a> CompressedCounts<'a> {
             x += self.previous_same_parity[parity] as i64;
         }
         if x < 0 || x > u32::MAX as i64 {
-            return Err(value_error("compressed RLE decoded outside uint32 range"));
+            self.error = Some("compressed RLE decoded outside uint32 range");
+            return None;
         }
 
         let count = x as u32;
         self.previous_same_parity[parity] = count;
         self.index += 1;
-        Ok(Some(count))
+        Some(count)
+    }
+
+    #[inline]
+    fn finish(self) -> PyResult<()> {
+        match self.error {
+            Some(message) => Err(value_error(message)),
+            None => Ok(()),
+        }
     }
 }
 
-fn bytes_to_counts(bytes: &[u8]) -> PyResult<Vec<u32>> {
-    // COCO's C decoder allocates one uint per input byte, which is an exact
-    // upper bound because each decoded count consumes at least one byte. Do
-    // the same here so fragmented masks do not repeatedly grow the vector.
-    let mut counts = Vec::with_capacity(bytes.len());
-    let mut decoder = CompressedCounts::new(bytes);
-    while let Some(count) = decoder.next_count()? {
-        counts.push(count);
+struct CountIntervalCursor<'a> {
+    counts: &'a [u32],
+    index: usize,
+    position: u32,
+}
+
+impl<'a> CountIntervalCursor<'a> {
+    #[inline]
+    fn new(counts: &'a [u32]) -> Self {
+        Self { counts, index: 0, position: 0 }
     }
+
+    #[inline(always)]
+    fn next_interval(&mut self) -> Option<(u32, u32)> {
+        while self.index < self.counts.len() {
+            self.position = self.position.wrapping_add(self.counts[self.index]);
+            self.index += 1;
+            if self.index == self.counts.len() {
+                return None;
+            }
+            let start = self.position;
+            let foreground = self.counts[self.index];
+            self.position = self.position.wrapping_add(foreground);
+            self.index += 1;
+            if foreground != 0 {
+                return Some((start, self.position));
+            }
+        }
+        None
+    }
+}
+
+struct CompressedIntervalCursor<'a> {
+    counts: CompressedCountCursor<'a>,
+    position: u32,
+}
+
+impl<'a> CompressedIntervalCursor<'a> {
+    #[inline]
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { counts: CompressedCountCursor::new(bytes), position: 0 }
+    }
+
+    #[inline(always)]
+    fn next_interval(&mut self) -> Option<(u32, u32)> {
+        loop {
+            let background = self.counts.next_count()?;
+            self.position = self.position.wrapping_add(background);
+            let foreground = self.counts.next_count()?;
+            let start = self.position;
+            self.position = self.position.wrapping_add(foreground);
+            if foreground != 0 {
+                return Some((start, self.position));
+            }
+        }
+    }
+
+    #[inline]
+    fn finish(self) -> PyResult<()> {
+        self.counts.finish()
+    }
+}
+
+fn decode_counts_into(bytes: &[u8], counts: &mut Vec<u32>) -> PyResult<()> {
+    counts.clear();
+    if counts.capacity() < bytes.len() {
+        // One decoded count consumes at least one compressed byte, so this is
+        // an exact upper bound and prevents growth on fragmented masks.
+        counts.reserve(bytes.len());
+    }
+    for_each_compressed_count(bytes, |_, count| counts.push(count))
+}
+
+fn bytes_to_counts(bytes: &[u8]) -> PyResult<Vec<u32>> {
+    let mut counts = Vec::with_capacity(bytes.len());
+    decode_counts_into(bytes, &mut counts)?;
     Ok(counts)
 }
 
@@ -175,18 +341,15 @@ fn area_one(rle: &Rle) -> u32 {
 
 #[inline]
 fn compressed_area(bytes: &[u8]) -> PyResult<u32> {
-    // `area` only needs foreground (odd-indexed) run lengths. Streaming the
-    // compressed counts avoids both copying the Python bytes object and
-    // allocating/decompressing a temporary Vec<u32> for every mask.
-    let mut decoder = CompressedCounts::new(bytes);
-    let mut index = 0usize;
+    // `area` needs only odd-indexed foreground runs. Consume the compressed
+    // stream directly, without allocating a run vector, while sharing the same
+    // tight decoder used by materializing operations.
     let mut area = 0u32;
-    while let Some(count) = decoder.next_count()? {
+    for_each_compressed_count(bytes, |index, count| {
         if index & 1 != 0 {
             area = area.wrapping_add(count);
         }
-        index += 1;
-    }
+    })?;
     Ok(area)
 }
 
@@ -547,35 +710,47 @@ fn merge_counts_with_compressed(
     out: &mut Vec<u32>,
 ) -> PyResult<()> {
     out.clear();
-    // The merged run count cannot exceed the sum of input run counts. We do
-    // not know the compressed input's decoded length without scanning it, but
-    // its byte length is an upper bound and gives a useful one-time reserve.
+    // A decoded count consumes at least one compressed byte, so this remains
+    // an upper bound without first materializing the right-hand RLE.
     let required_capacity = a.len().saturating_add(b_bytes.len());
     if out.capacity() < required_capacity {
         out.reserve(required_capacity);
     }
 
+    let a_len = a.len();
     let mut ia = 1usize;
-    let mut ca = *a.get(0).unwrap_or(&0);
-    let mut b_decoder = CompressedCounts::new(b_bytes);
-    let mut cb = b_decoder.next_count()?.unwrap_or(0);
-    let mut b_done = b_bytes.is_empty() || b_bytes[0] == 0;
+    let mut ca = a.first().copied().unwrap_or(0);
+
+    // Stream the compressed RHS directly into the merge.  Round 2 decoded it
+    // into a temporary Vec first; perf attributed 14% of structured merge and
+    // 26% of fragmented merge to that extra pass.  This cursor defers error
+    // conversion until the end so the hot loop does not carry PyResult per run.
+    let mut b_decoder = CompressedCountCursor::new(b_bytes);
+    let first_b = b_decoder.next_count();
+    let mut cb = first_b.unwrap_or(0);
+    let mut b_done = first_b.is_none();
+
     let mut va = false;
     let mut vb = false;
     let mut out_value = false;
     let mut run = 0u32;
+
     loop {
-        let c = ca.min(cb);
-        run = run.saturating_add(c);
+        let c = if ca < cb { ca } else { cb };
+        // COCO's reference implementation accumulates unsigned counts with
+        // normal uint arithmetic. wrapping_add matches that behavior without
+        // the extra saturation logic in the previous Rust loop.
+        run = run.wrapping_add(c);
         ca -= c;
         cb -= c;
-        if ca == 0 && ia < a.len() {
+
+        if ca == 0 && ia < a_len {
             ca = a[ia];
             ia += 1;
             va = !va;
         }
         if cb == 0 && !b_done {
-            match b_decoder.next_count()? {
+            match b_decoder.next_count() {
                 Some(next) => {
                     cb = next;
                     vb = !vb;
@@ -583,8 +758,9 @@ fn merge_counts_with_compressed(
                 None => b_done = true,
             }
         }
+
         let next_value = if intersect { va && vb } else { va || vb };
-        let done = ca == 0 && cb == 0 && ia >= a.len() && b_done;
+        let done = ca == 0 && cb == 0 && ia >= a_len && b_done;
         if next_value != out_value || done {
             out.push(run);
             run = 0;
@@ -594,7 +770,78 @@ fn merge_counts_with_compressed(
             break;
         }
     }
-    Ok(())
+
+    b_decoder.finish()
+}
+
+fn union_counts_with_compressed(
+    a: &[u32],
+    b_bytes: &[u8],
+    total: u32,
+    out: &mut Vec<u32>,
+) -> PyResult<()> {
+    out.clear();
+    let required_capacity = a.len().saturating_add(b_bytes.len());
+    if out.capacity() < required_capacity {
+        out.reserve(required_capacity);
+    }
+
+    // Treat each RLE as a sorted stream of foreground intervals.  The usual
+    // run-boundary state machine handles every background and foreground run
+    // separately; interval union handles one logical object per pair and can
+    // coalesce overlap immediately as the accumulated union grows denser.
+    let mut a_cursor = CountIntervalCursor::new(a);
+    let mut b_cursor = CompressedIntervalCursor::new(b_bytes);
+    let mut next_a = a_cursor.next_interval();
+    let mut next_b = b_cursor.next_interval();
+    let mut pending: Option<(u32, u32)> = None;
+    let mut output_position = 0u32;
+
+    while next_a.is_some() || next_b.is_some() {
+        let interval = match (next_a, next_b) {
+            (Some(a_interval), Some(b_interval)) => {
+                if a_interval.0 <= b_interval.0 {
+                    next_a = a_cursor.next_interval();
+                    a_interval
+                } else {
+                    next_b = b_cursor.next_interval();
+                    b_interval
+                }
+            }
+            (Some(a_interval), None) => {
+                next_a = a_cursor.next_interval();
+                a_interval
+            }
+            (None, Some(b_interval)) => {
+                next_b = b_cursor.next_interval();
+                b_interval
+            }
+            (None, None) => unreachable!(),
+        };
+
+        match pending {
+            Some((start, end)) if interval.0 <= end => {
+                pending = Some((start, end.max(interval.1)));
+            }
+            Some((start, end)) => {
+                out.push(start.wrapping_sub(output_position));
+                out.push(end.wrapping_sub(start));
+                output_position = end;
+                pending = Some(interval);
+            }
+            None => pending = Some(interval),
+        }
+    }
+
+    if let Some((start, end)) = pending {
+        out.push(start.wrapping_sub(output_position));
+        out.push(end.wrapping_sub(start));
+        output_position = end;
+    }
+    if output_position < total || out.is_empty() {
+        out.push(total.wrapping_sub(output_position));
+    }
+    b_cursor.finish()
 }
 
 fn polygon_to_rle(poly: &[f64], h: usize, w: usize) -> Rle {
@@ -789,10 +1036,10 @@ pub fn merge(
         .get_item("counts")?
         .ok_or_else(|| value_error("RLE missing counts"))?;
     let mut acc = with_count_bytes(&first_counts_obj, bytes_to_counts)?;
+    let total = h.saturating_mul(w) as u32;
 
-    // Reuse two run buffers through the entire reduction. In particular, do
-    // not materialize every input RLE and do not allocate a fresh result Vec
-    // for each pairwise merge.
+    // Reuse the accumulator/output buffers through the reduction while
+    // streaming each compressed right-hand operand directly into the merge.
     let mut scratch = Vec::<u32>::new();
     for item in list.iter().skip(1) {
         let d = item.downcast::<PyDict>()?;
@@ -803,9 +1050,15 @@ pub fn merge(
         let counts_obj = d
             .get_item("counts")?
             .ok_or_else(|| value_error("RLE missing counts"))?;
-        with_count_bytes(&counts_obj, |bytes| {
-            merge_counts_with_compressed(&acc, bytes, intersect != 0, &mut scratch)
-        })?;
+        if intersect == 0 {
+            with_count_bytes(&counts_obj, |bytes| {
+                union_counts_with_compressed(&acc, bytes, total, &mut scratch)
+            })?;
+        } else {
+            with_count_bytes(&counts_obj, |bytes| {
+                merge_counts_with_compressed(&acc, bytes, true, &mut scratch)
+            })?;
+        }
         std::mem::swap(&mut acc, &mut scratch);
     }
 
@@ -993,8 +1246,7 @@ pub fn _rle_bytes_to_array<'py>(
     py: Python<'py>,
     counts: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyArray1<u32>>> {
-    let bytes = extract_count_bytes(counts)?;
-    let values = bytes_to_counts(&bytes)?;
+    let values = with_count_bytes(counts, bytes_to_counts)?;
     Ok(Array1::from_vec(values).into_pyarray_bound(py))
 }
 

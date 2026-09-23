@@ -38,8 +38,10 @@ DEFAULT_PERF_CASES = (
     'mask_encode_sparse_128x128x16',
     'mask_encode_512x512x4',
     'mask_encode_structured_512x512x4',
+    'mask_decode_fragmented_256x256x32',
     'mask_area_structured_256x256x32',
     'mask_area_fragmented_256x256x32',
+    'mask_tobbox_fragmented_256x256x32',
     'mask_merge_structured_256x256x32',
     'mask_merge_fragmented_256x256x32',
     'mask_iou_fragmented_48',
@@ -59,6 +61,14 @@ PERF_EVENTS = (
 )
 
 PORTABLE_PROFILE_RUSTFLAGS = '-C target-cpu=generic'
+
+
+def _progress(message):
+    print(f'[evidence] {message}', flush=True)
+
+
+def _elapsed(start):
+    return f'{time.monotonic() - start:.1f}s'
 
 
 BENCHMARK_THREAD_ENV = {
@@ -1188,22 +1198,32 @@ def main(argv=None):
     bundle = temp_root / f'kwimage-ext-rust-profile-{stamp}'
     bundle.mkdir()
     try:
+        _progress(f'collect evidence -> {output}')
         metadata = _basic_metadata(sys.argv if argv is None else [sys.argv[0], *argv])
         (bundle / 'metadata.json').write_text(json.dumps(metadata, indent=2, sort_keys=True) + '\n')
         _write_bundle_readme(bundle)
         _snapshot_source(bundle)
+        stage_start = time.monotonic()
+        _progress('capture environment')
         _capture_environment(bundle, commands, env)
+        _progress(f'capture environment done ({_elapsed(stage_start)})')
 
         if args.rebuild_profiled:
             # Build the Cython reference first because its helper may install
             # build requirements (including NumPy). Rust is then compiled
             # against the final environment that will actually be benchmarked.
             if not args.skip_legacy_rebuild:
+                stage_start = time.monotonic()
+                _progress('rebuild same-checkout legacy comparator')
                 legacy_rebuild = _rebuild_legacy_reference(bundle, commands, env)
+                _progress(f'legacy rebuild done rc={legacy_rebuild.get("returncode")} ({_elapsed(stage_start)})')
                 if legacy_rebuild['ok'] is not True:
                     hard_failure = True
             if not hard_failure:
+                stage_start = time.monotonic()
+                _progress('rebuild portable Rust extension')
                 rebuild = _rebuild_profiled(bundle, commands, env)
+                _progress(f'Rust rebuild done rc={rebuild.get("returncode")} ({_elapsed(stage_start)})')
                 if rebuild['returncode'] != 0:
                     hard_failure = True
             if not hard_failure:
@@ -1226,16 +1246,22 @@ def main(argv=None):
 
         correctness_result = None
         if not args.skip_tests and not hard_failure:
+            stage_start = time.monotonic()
+            _progress('run correctness gate')
             correctness_result = _run_correctness_gate(
                 bundle, commands, env, args.quick, version_state)
+            _progress(f'correctness gate done required_passed={correctness_result.get("required_passed")} ({_elapsed(stage_start)})')
             if correctness_result['required_passed'] is not True:
                 hard_failure = True
 
         benchmark_result = None
         benchmark_json = bundle / 'benchmarks' / 'results.json'
         if not hard_failure:
+            stage_start = time.monotonic()
+            _progress('run paired multi-seed benchmark matrix')
             benchmark_result, benchmark_json = _run_benchmarks(
                 bundle, commands, env, args.quick, _parse_cases(args.cases))
+            _progress(f'benchmark matrix done rc={benchmark_result.get("returncode")} ({_elapsed(stage_start)})')
             if benchmark_result['returncode'] != 0 or not benchmark_json.exists():
                 hard_failure = True
 
@@ -1258,7 +1284,10 @@ def main(argv=None):
             and shutil.which('perf') is not None
         )
         if can_perf:
-            for case in _parse_cases(args.perf_cases) or DEFAULT_PERF_CASES:
+            perf_cases = _parse_cases(args.perf_cases) or DEFAULT_PERF_CASES
+            for index, case in enumerate(perf_cases, 1):
+                stage_start = time.monotonic()
+                _progress(f'perf {index}/{len(perf_cases)}: {case}')
                 seconds = min(args.perf_seconds, 0.5) if args.quick else args.perf_seconds
                 repeats = 1 if args.quick else args.perf_repeats
                 stat = _perf_stat(bundle, case, commands, env, seconds, repeats)
@@ -1268,6 +1297,9 @@ def main(argv=None):
                     'stat': stat['returncode'],
                     'record': record['returncode'],
                 }
+                _progress(
+                    f'perf {case} done stat={stat["returncode"]} '
+                    f'record={record["returncode"]} ({_elapsed(stage_start)})')
         else:
             reason = []
             if args.no_perf:
@@ -1283,7 +1315,14 @@ def main(argv=None):
 
         (bundle / 'commands.json').write_text(json.dumps(commands, indent=2) + '\n')
         _write_summary(bundle, benchmark_json, correctness_result, perf_results)
+        unpacked_bytes = sum(
+            path.stat().st_size for path in bundle.rglob('*') if path.is_file())
+        _progress(f'compress evidence bundle ({unpacked_bytes / (1024 ** 2):.1f} MiB unpacked)')
+        stage_start = time.monotonic()
         _tar_bundle(bundle, output)
+        _progress(
+            f'compression done ({output.stat().st_size / (1024 ** 2):.1f} MiB, '
+            f'{_elapsed(stage_start)})')
         digest = _sha256(output)
         print(f'evidence bundle: {output}')
         print(f'sha256: {digest}')

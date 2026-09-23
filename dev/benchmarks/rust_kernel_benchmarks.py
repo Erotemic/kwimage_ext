@@ -128,6 +128,7 @@ CASE_SPECS = (
     CaseSpec(
         'mask_decode_fragmented_256x256x32', 'mask',
         'Decode 32 fragmented 256 x 256 COCO RLE masks; high-run-count workload.',
+        perf_default=True,
     ),
     CaseSpec(
         'mask_area_structured_256x256x32', 'mask',
@@ -146,6 +147,7 @@ CASE_SPECS = (
     CaseSpec(
         'mask_tobbox_fragmented_256x256x32', 'mask',
         'Bounding boxes for 32 fragmented 256 x 256 COCO RLE masks.',
+        perf_default=True,
     ),
     CaseSpec(
         'mask_merge_structured_256x256x32', 'mask',
