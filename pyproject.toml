@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "kwimage_ext"
-version = "0.4.0"
+version = "0.4.1"
 description = "Binary acceleration extensions for kwimage"
 readme = "README.rst"
 requires-python = ">=3.10"

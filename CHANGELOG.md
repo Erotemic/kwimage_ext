@@ -4,7 +4,17 @@ We are currently working on porting this changelog to the specifications in
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Version 0.4.0 - Unreleased
+## Version 0.4.1 - Unreleased
+
+### Changed
+* Speed up portable Rust mask encoding, compressed RLE decoding and area, bounding-box and merge operations without CPU-specific instructions. The merge benchmark now covers both union and intersection against the same-checkout legacy backend and pycocotools.
+* Keep the Rust profiling rebuild on the generic CPU target and record paired, multi-seed benchmark results with comparator artifact fingerprints and progress output.
+
+### Fixed
+* Preserve exact COCO RLE output while merging foreground intervals for union and streaming compressed counts for intersection. Once an intersection becomes empty, validate later inputs without repeating merge arithmetic.
+
+
+## Version 0.4.0 - Released 2026-09-21
 
 ### Changed
 * Opt both GitHub Actions and GitLab CI releases into PyPI Trusted Publishing so release uploads use short-lived OIDC credentials instead of long-lived Twine passwords.
