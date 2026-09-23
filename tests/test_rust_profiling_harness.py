@@ -576,6 +576,11 @@ def test_correctness_gate_discovers_fastpath_regressions(tmp_path, monkeypatch):
         bundle, [], {}, quick=False, version_state={})
     assert status['required_passed'] is True
     command = seen_commands[0]
-    assert 'tests/test_rust_performance_fastpaths.py' in command
-    if (REPO_ROOT / 'tests' / 'test_backend_parity.py').exists():
-        assert 'tests/test_backend_parity.py' in command
+    fastpath_test = str(
+        (REPO_ROOT / 'tests' / 'test_rust_performance_fastpaths.py')
+        .relative_to(REPO_ROOT)
+    )
+    assert fastpath_test in command
+    backend_parity = REPO_ROOT / 'tests' / 'test_backend_parity.py'
+    if backend_parity.exists():
+        assert str(backend_parity.relative_to(REPO_ROOT)) in command
