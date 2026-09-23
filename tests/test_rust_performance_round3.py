@@ -9,6 +9,20 @@ def _counts(items):
     return [item['counts'] for item in items]
 
 
+def test_intersection_empty_accumulator_still_validates_later_rles():
+    empty = rust.encode(np.asfortranarray(np.zeros((7, 9, 1), dtype=np.uint8)))[0]
+    solid = rust.encode(np.asfortranarray(np.ones((7, 9, 1), dtype=np.uint8)))[0]
+
+    merged = rust.merge([solid, empty, solid], intersect=1)
+    assert merged == empty
+
+    with pytest.raises(ValueError, match='invalid compressed RLE character'):
+        rust.merge([empty, {'size': [7, 9], 'counts': b'!'}], intersect=1)
+
+    mismatched = {'size': [8, 9], 'counts': solid['counts']}
+    assert rust.merge([empty, mismatched], intersect=1)['size'] == [0, 0]
+
+
 def test_mask_encode_contiguous_fast_path_matches_legacy_patterns_if_available():
     legacy = pytest.importorskip(
         'kwimage_ext.structs._mask_backend.cython_mask_legacy')

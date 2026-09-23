@@ -160,6 +160,14 @@ CASE_SPECS = (
         perf_default=True,
     ),
     CaseSpec(
+        'mask_merge_intersect_structured_256x256x32', 'mask',
+        'Intersection of 32 structured 256 x 256 COCO RLE masks.',
+    ),
+    CaseSpec(
+        'mask_merge_intersect_fragmented_256x256x32', 'mask',
+        'Intersection of 32 fragmented 256 x 256 COCO RLE masks.',
+    ),
+    CaseSpec(
         'mask_iou_fragmented_48', 'mask',
         '48 x 48 fragmented-mask IoU matrix; RLE run-scanning workload.',
         perf_default=True,
@@ -631,13 +639,20 @@ def _prepare_mask_case(spec, backend, seed):
             work_items = masks.shape[2]
             work_unit = 'rles'
         else:
+            intersect = int(spec.name.startswith('mask_merge_intersect_'))
+
             def call():
-                return module.merge(backend_rles, intersect=0)
+                return module.merge(backend_rles, intersect=intersect)
 
             def verify():
-                got = rust.merge(rust_rles, intersect=0)
-                want = module.merge(backend_rles, intersect=0)
+                got = rust.merge(rust_rles, intersect=intersect)
+                want = module.merge(backend_rles, intersect=intersect)
                 assert _rle_signature([got]) == _rle_signature([want])
+                expected = (
+                    np.all(masks != 0, axis=2) if intersect
+                    else np.any(masks != 0, axis=2)
+                ).astype(np.uint8)
+                np.testing.assert_array_equal(rust.decode([got])[:, :, 0], expected)
                 return {'digest': _digest_value(got), 'comparator': backend}
 
             work_items = masks.shape[2]

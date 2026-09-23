@@ -1050,6 +1050,14 @@ pub fn merge(
         let counts_obj = d
             .get_item("counts")?
             .ok_or_else(|| value_error("RLE missing counts"))?;
+        if intersect != 0 && acc.len() == 1 && acc[0] == total {
+            // Empty is absorbing for intersection. Still validate each later
+            // compressed stream and its dimensions, as the merge loop would.
+            with_count_bytes(&counts_obj, |bytes| {
+                for_each_compressed_count(bytes, |_, _| {})
+            })?;
+            continue;
+        }
         if intersect == 0 {
             with_count_bytes(&counts_obj, |bytes| {
                 union_counts_with_compressed(&acc, bytes, total, &mut scratch)

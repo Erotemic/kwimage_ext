@@ -131,6 +131,8 @@ def test_benchmark_matrix_declares_common_mask_variations():
         'mask_tobbox_fragmented_256x256x32',
         'mask_merge_structured_256x256x32',
         'mask_merge_fragmented_256x256x32',
+        'mask_merge_intersect_structured_256x256x32',
+        'mask_merge_intersect_fragmented_256x256x32',
         'mask_iou_fragmented_48',
         'mask_iou_structured_64',
         'mask_iou_crowd_32',
